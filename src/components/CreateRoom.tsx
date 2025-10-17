@@ -182,8 +182,8 @@ const CreateRoom: React.FC<CreateRoomProps> = ({ onBack, onJoinRoom }) => {
         return
       }
       
-      // Actualizar estado de la sala a 'playing' Y guardar el juego
-      const { error: roomError } = await roomHelpers.updateRoomWithGame(room.id, 'playing', selectedGame)
+      // Actualizar estado de la sala a 'playing' (volvemos al método original)
+      const { error: roomError } = await roomHelpers.updateRoomStatus(room.id, 'playing')
       
       if (roomError) {
         setError('Error al iniciar el juego')
@@ -191,14 +191,16 @@ const CreateRoom: React.FC<CreateRoomProps> = ({ onBack, onJoinRoom }) => {
         return
       }
       
-      // Navegar a la sala de juego
+      // Navegar a la sala de juego con el juego completo
       const hostPlayer = players.find(p => p.is_host)
       if (hostPlayer) {
         const updatedRoom = { 
           ...room, 
           status: 'playing' as const, 
-          game: selectedGame
+          game: selectedGame, // Juego con preguntas
+          current_game_data: selectedGame // Respaldo
         }
+        console.log('🎯 Passing game to MultiplayerRoom:', selectedGame.title, 'Questions:', selectedGame.questions?.length)
         onJoinRoom(updatedRoom, hostPlayer)
       }
     } catch (err) {

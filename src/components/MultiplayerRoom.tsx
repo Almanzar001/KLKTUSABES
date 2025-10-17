@@ -51,8 +51,10 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
     loadGames()
     
     // Si ya hay un juego cargado, inicializar timer
-    if (initialRoom.game && roomState === 'playing') {
-      setTimeLeft(initialRoom.game.questions?.[0]?.time_limit || 30)
+    if ((initialRoom.game || initialRoom.current_game_data) && roomState === 'playing') {
+      const gameToUse = initialRoom.current_game_data || initialRoom.game
+      setTimeLeft(gameToUse?.questions?.[0]?.time_limit || 30)
+      console.log('🎯 Initial game loaded:', gameToUse?.title, 'Questions:', gameToUse?.questions?.length)
     }
   }, [])
 
@@ -86,24 +88,15 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
           if (payload.new.status === 'playing') {
             console.log('🚀 Starting game for:', player.name)
             
-            // Si hay current_game_data, usarlo para todos
-            if (payload.new.current_game_data) {
-              console.log('✅ Game data received from room update:', payload.new.current_game_data.title)
-              console.log('✅ Questions count:', payload.new.current_game_data.questions?.length || 0)
-              
-              setCurrentGame(payload.new.current_game_data)
+            if (player.is_host) {
+              // El host ya tiene el juego, no necesita cargarlo de nuevo
+              console.log('🏠 Host already has game, skipping load')
               setRoomState('playing')
               setGameState('question')
-              setTimeLeft(payload.new.current_game_data.questions?.[0]?.time_limit || 30)
             } else {
-              // Fallback al método anterior
-              if (player.is_host) {
-                console.log('🏠 Host already has game, skipping load')
-                setRoomState('playing')
-                setGameState('question')
-              } else {
-                handleGameStart()
-              }
+              // Los participantes necesitan cargar el juego desde game_sessions
+              console.log('👥 Participant loading game...')
+              handleGameStart()
             }
           }
         }
@@ -115,32 +108,34 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
     }
   }, [room.id])
 
-  // Suscribirse a cambios en game_sessions para recibir el juego
+  // Suscribirse a cambios en game_sessions para recibir el juego (TODOS los jugadores)
   useEffect(() => {
-    if (player.is_host) return // El host no necesita suscribirse
-    
     const subscription = realtimeHelpers.subscribeToGameSession(
       room.id,
       async (payload) => {
-        console.log('🎯 Game session changed for participant:', payload)
+        console.log('🎯 Game session changed:', payload)
         
         if (payload.eventType === 'INSERT' && payload.new) {
           // Se creó una nueva sesión de juego
-          console.log('🎮 New game session detected, loading game...')
+          console.log(`🎮 New game session detected for ${player.name}`)
           
-          try {
-            // Cargar el juego completo
-            const { data: gameData, error: gameError } = await gameHelpers.getGameWithQuestions(payload.new.game_id)
-            
-            if (!gameError && gameData) {
-              console.log('✅ Game loaded for participant:', gameData.title)
-              setCurrentGame(gameData)
-              setRoomState('playing')
-              setGameState('question')
-              setTimeLeft(gameData.questions?.[0]?.time_limit || 30)
+          if (!player.is_host) {
+            // Solo los participantes cargan el juego, el host ya lo tiene
+            try {
+              const { data: gameData, error: gameError } = await gameHelpers.getGameWithQuestions(payload.new.game_id)
+              
+              if (!gameError && gameData) {
+                console.log('✅ Game loaded for participant:', gameData.title, 'Questions:', gameData.questions?.length)
+                setCurrentGame(gameData)
+                setRoomState('playing')
+                setGameState('question')
+                setTimeLeft(gameData.questions?.[0]?.time_limit || 30)
+              } else {
+                console.error('❌ Error loading game for participant:', gameError)
+              }
+            } catch (err) {
+              console.error('❌ Exception loading game for participant:', err)
             }
-          } catch (err) {
-            console.error('❌ Error loading game for participant:', err)
           }
         }
       }
@@ -149,7 +144,18 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
     return () => {
       realtimeHelpers.unsubscribe(subscription)
     }
-  }, [room.id, player.is_host])
+  }, [room.id, player.is_host, player.name])
+
+  // Efecto especial para el host: iniciar el juego automáticamente si ya tiene los datos
+  useEffect(() => {
+    if (player.is_host && roomState === 'playing' && currentGame && gameState === 'waiting') {
+      console.log('🏠 Host auto-starting game with current data')
+      setGameState('question')
+      if (currentGame.questions?.[0]) {
+        setTimeLeft(currentGame.questions[0].time_limit || 30)
+      }
+    }
+  }, [player.is_host, roomState, currentGame, gameState])
 
   // Timer del juego
   useEffect(() => {
