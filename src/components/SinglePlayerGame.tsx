@@ -436,10 +436,10 @@ const SinglePlayerGame: React.FC<SinglePlayerGameProps> = ({
                   disabled={showAnswer}
                   className={`answer-option ${
                     showAnswer
-                      ? index === currentShuffledQuestion.correctAnswerIndex
-                        ? 'answer-option-correct'
+                      ? selectedAnswer === index && selectedAnswer === currentShuffledQuestion.correctAnswerIndex
+                        ? 'answer-option-correct'  // Solo mostrar verde si seleccionó la correcta
                         : selectedAnswer === index
-                        ? 'answer-option-incorrect'
+                        ? 'answer-option-incorrect' // Solo mostrar rojo en la que seleccionó
                         : ''
                       : selectedAnswer === index
                       ? 'answer-option-selected'
@@ -448,10 +448,10 @@ const SinglePlayerGame: React.FC<SinglePlayerGameProps> = ({
                 >
                   <div className="flex items-center justify-between">
                     <span>{option}</span>
-                    {showAnswer && index === currentShuffledQuestion.correctAnswerIndex && (
+                    {showAnswer && selectedAnswer === index && selectedAnswer === currentShuffledQuestion.correctAnswerIndex && (
                       <CheckCircle className="w-5 h-5 text-green-600" />
                     )}
-                    {showAnswer && selectedAnswer === index && index !== currentShuffledQuestion.correctAnswerIndex && (
+                    {showAnswer && selectedAnswer === index && selectedAnswer !== currentShuffledQuestion.correctAnswerIndex && (
                       <X className="w-5 h-5 text-red-600" />
                     )}
                   </div>
