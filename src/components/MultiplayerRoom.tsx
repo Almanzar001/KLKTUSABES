@@ -141,22 +141,66 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
     }
   }, [room.id, player.is_host, player.name])
 
-  // Suscribirse a Broadcast Channel para recibir datos de juego
+  // Suscribirse a Broadcast Channel para recibir datos de juego y sincronización
   useEffect(() => {
-    if (player.is_host) return // El host no necesita escuchar
-    
     const gameChannel = new BroadcastChannel(`game-${room.id}`)
     
     gameChannel.onmessage = (event) => {
-      console.log('📡 Broadcast message received by participant:', event.data)
+      console.log('📡 Broadcast message received by', player.is_host ? 'HOST' : 'PARTICIPANT', ':', event.data)
       
       if (event.data.type === 'GAME_DATA' && event.data.game) {
         console.log('✅ Game data received via broadcast:', event.data.game.title, 'Questions:', event.data.game.questions?.length)
-        setCurrentGame(event.data.game)
-        if (roomState === 'playing') {
-          setGameState('question')
-          setTimeLeft(event.data.game.questions?.[0]?.time_limit || 30)
-          setError(null)
+        if (!player.is_host) { // Solo participantes procesan GAME_DATA
+          setCurrentGame(event.data.game)
+          if (roomState === 'playing') {
+            setGameState('question')
+            setTimeLeft(event.data.game.questions?.[0]?.time_limit || 30)
+            setError(null)
+          }
+        }
+      }
+      
+      // Sincronización de estado de juego (TODOS los jugadores escuchan)
+      if (event.data.type === 'GAME_STATE_SYNC' && !player.is_host) {
+        console.log('🔄 Game state sync received:', event.data)
+        
+        const { 
+          questionIndex, 
+          gameState: newGameState, 
+          timeLeft: newTimeLeft, 
+          showAnswer: newShowAnswer,
+          gameEnded 
+        } = event.data
+        
+        // Manejar fin del juego
+        if (gameEnded) {
+          console.log('🏁 Participant syncing to game end')
+          setRoomState('results')
+          setGameState('leaderboard')
+          return
+        }
+        
+        // Sincronizar estado solo si no es el host
+        setCurrentQuestionIndex(questionIndex)
+        setGameState(newGameState)
+        setTimeLeft(newTimeLeft)
+        setShowAnswer(newShowAnswer)
+        setSelectedAnswer(null) // Resetear respuesta del participante
+        setPlayerAnswers({}) // Limpiar respuestas anteriores
+        setWaitingForPlayers(false)
+        setError(null)
+        
+        console.log(`✅ Participant synced to question ${questionIndex + 1}`)
+      }
+      
+      // Sincronización del temporizador (solo participantes)
+      if (event.data.type === 'TIMER_SYNC' && !player.is_host) {
+        const { timeLeft: syncedTime, questionIndex: syncedQuestionIndex } = event.data
+        
+        // Solo sincronizar si estamos en la misma pregunta y no se está mostrando la respuesta
+        if (syncedQuestionIndex === currentQuestionIndex && !showAnswer) {
+          setTimeLeft(syncedTime)
+          console.log(`🕒 Participant timer synced: ${syncedTime}s`)
         }
       }
     }
@@ -164,7 +208,7 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
     return () => {
       gameChannel.close()
     }
-  }, [room.id, player.is_host, roomState])
+  }, [room.id, player.is_host, roomState, currentQuestionIndex, showAnswer])
 
   // Efecto especial para el host: iniciar el juego automáticamente si ya tiene los datos
   useEffect(() => {
@@ -202,7 +246,7 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
     }
   }, [player.is_host, roomState, gameState, currentGame?.questions?.length])
 
-  // Timer del juego
+  // Timer del juego (solo el host maneja el timer principal)
   useEffect(() => {
     if (gameState !== 'question' || showAnswer) return
 
@@ -222,12 +266,25 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
           playTick()
         }
         
+        // El host sincroniza el temporizador cada 5 segundos
+        if (player.is_host && newTime % 5 === 0 && newTime > 0) {
+          console.log(`🕒 HOST syncing timer: ${newTime}s`)
+          const gameChannel = new BroadcastChannel(`game-${room.id}`)
+          gameChannel.postMessage({
+            type: 'TIMER_SYNC',
+            timeLeft: newTime,
+            questionIndex: currentQuestionIndex
+          })
+          
+          setTimeout(() => gameChannel.close(), 100)
+        }
+        
         return newTime
       })
     }, 1000)
 
     return () => clearInterval(interval)
-  }, [gameState, showAnswer, playTick])
+  }, [gameState, showAnswer, playTick, player.is_host, currentQuestionIndex])
 
   const loadPlayers = async () => {
     try {
@@ -458,6 +515,21 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
       setShowAnswer(true)
       setWaitingForPlayers(false)
       
+      // SINCRONIZAR mostrar respuesta si soy el host
+      if (player.is_host) {
+        console.log('📊 HOST broadcasting show answer state')
+        const gameChannel = new BroadcastChannel(`game-${room.id}`)
+        gameChannel.postMessage({
+          type: 'GAME_STATE_SYNC',
+          questionIndex: currentQuestionIndex,
+          gameState: 'question',
+          timeLeft: timeLeft,
+          showAnswer: true
+        })
+        
+        setTimeout(() => gameChannel.close(), 1000)
+      }
+      
       // NO avanzar automáticamente - esperar que el host presione el botón
     } else {
       // Esperar a que otros respondan
@@ -480,6 +552,21 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
       }))
     }
     
+    // SINCRONIZAR tiempo agotado si soy el host
+    if (player.is_host) {
+      console.log('⏰ HOST broadcasting time up state')
+      const gameChannel = new BroadcastChannel(`game-${room.id}`)
+      gameChannel.postMessage({
+        type: 'GAME_STATE_SYNC',
+        questionIndex: currentQuestionIndex,
+        gameState: 'question',
+        timeLeft: 0,
+        showAnswer: true
+      })
+      
+      setTimeout(() => gameChannel.close(), 1000)
+    }
+    
     // TODO: Registrar respuesta por tiempo agotado
     
     // NO avanzar automáticamente - mostrar botón para el host
@@ -492,16 +579,50 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
     
     if (nextIndex < currentGame.questions.length) {
       // Resetear estados para la siguiente pregunta
+      const newTimeLimit = currentGame.questions[nextIndex].time_limit || 30
+      
       setCurrentQuestionIndex(nextIndex)
       setSelectedAnswer(null)
       setShowAnswer(false)
       setPlayerAnswers({}) // Limpiar respuestas anteriores
       setWaitingForPlayers(false)
-      setTimeLeft(currentGame.questions[nextIndex].time_limit || 30)
+      setTimeLeft(newTimeLimit)
       setGameState('question')
+      
+      // SINCRONIZAR con todos los participantes si soy el host
+      if (player.is_host) {
+        console.log(`🎯 HOST broadcasting next question: ${nextIndex + 1}`)
+        const gameChannel = new BroadcastChannel(`game-${room.id}`)
+        gameChannel.postMessage({
+          type: 'GAME_STATE_SYNC',
+          questionIndex: nextIndex,
+          gameState: 'question',
+          timeLeft: newTimeLimit,
+          showAnswer: false
+        })
+        
+        // Cerrar canal después de un momento
+        setTimeout(() => gameChannel.close(), 1000)
+      }
     } else {
       setRoomState('results')
       setGameState('leaderboard')
+      
+      // SINCRONIZAR fin del juego si soy el host
+      if (player.is_host) {
+        console.log('🏁 HOST broadcasting game end')
+        const gameChannel = new BroadcastChannel(`game-${room.id}`)
+        gameChannel.postMessage({
+          type: 'GAME_STATE_SYNC',
+          questionIndex: nextIndex,
+          gameState: 'leaderboard',
+          timeLeft: 0,
+          showAnswer: false,
+          gameEnded: true
+        })
+        
+        setTimeout(() => gameChannel.close(), 1000)
+      }
     }
   }
 
