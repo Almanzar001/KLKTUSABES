@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { ArrowLeft, Users } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
-import { roomHelpers } from '../supabase'
+import { roomHelpers, testConnection } from '../supabase'
 import { Room, Player, AVAILABLE_AVATARS, isValidRoomCode } from '../types'
 
 interface JoinRoomProps {
@@ -40,14 +40,21 @@ const JoinRoom: React.FC<JoinRoomProps> = ({ onBack, onJoinRoom }) => {
       const { data: roomData, error: roomError } = await roomHelpers.findRoomByCode(roomCode.trim())
 
       if (roomError) {
-        if (roomError.code === 'PGRST116' || roomError.message?.includes('No rows found')) {
-          setError('No se encontró ninguna sala con ese código')
+        console.error('🔴 Room search error details:', roomError)
+        
+        if (roomError.code === 'PGRST116' || 
+            roomError.message?.includes('No rows found') || 
+            roomError.code === 'ROOM_NOT_FOUND') {
+          setError('No se encontró ninguna sala con ese código. Verifica que el código sea correcto.')
         } else if (roomError.message?.includes('duplicate') || roomError.code === '23505') {
           setError('Ya estás en esta sala')
+        } else if (roomError.message?.includes('permission') || roomError.code?.includes('RLS')) {
+          setError('No tienes permisos para acceder a esta sala')
+        } else if (roomError.message?.includes('network') || roomError.message?.includes('fetch')) {
+          setError('Error de conexión. Verifica tu internet e intenta de nuevo.')
         } else {
-          setError('Error al buscar la sala: ' + (roomError.message || 'Error desconocido'))
+          setError(`Error al buscar la sala: ${roomError.message || 'Error desconocido'}`)
         }
-        console.error('Room error:', roomError)
         return
       }
 
@@ -107,6 +114,16 @@ const JoinRoom: React.FC<JoinRoomProps> = ({ onBack, onJoinRoom }) => {
     // Solo permitir números y limitar a 6 dígitos
     const numericValue = value.replace(/\D/g, '').slice(0, 6)
     setRoomCode(numericValue)
+  }
+
+  const handleTestConnection = async () => {
+    setError('Probando conexión...')
+    const result = await testConnection()
+    if (result.success) {
+      setError(`✅ Conexión exitosa! Salas en BD: ${result.count || 0}`)
+    } else {
+      setError(`❌ Error de conexión: ${(result.error as any)?.message || 'Error desconocido'}`)
+    }
   }
 
   return (
@@ -219,13 +236,23 @@ const JoinRoom: React.FC<JoinRoomProps> = ({ onBack, onJoinRoom }) => {
             </div>
           </div>
 
-          <button
-            onClick={handleJoinRoom}
-            disabled={!roomCode.trim() || !playerName.trim() || roomCode.length !== 6 || loading}
-            className="w-full mt-8 btn-dominican-primary disabled:opacity-50"
-          >
-            {loading ? 'Uniéndose...' : 'Unirse a la Sala'}
-          </button>
+          <div className="mt-8 space-y-3">
+            <button
+              onClick={handleJoinRoom}
+              disabled={!roomCode.trim() || !playerName.trim() || roomCode.length !== 6 || loading}
+              className="w-full btn-dominican-primary disabled:opacity-50"
+            >
+              {loading ? 'Uniéndose...' : 'Unirse a la Sala'}
+            </button>
+            
+            {/* Botón temporal para probar conexión */}
+            <button
+              onClick={handleTestConnection}
+              className="w-full btn-dominican-outline text-sm"
+            >
+              🔧 Probar Conexión a Base de Datos
+            </button>
+          </div>
 
           {/* Instrucciones */}
           <div className="mt-8 p-4 bg-blue-50 border border-blue-200 rounded-lg">

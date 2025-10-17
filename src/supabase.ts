@@ -839,6 +839,29 @@ const formatRelativeTime = (dateString: string) => {
   return `${Math.floor(diffDays / 30)} meses`
 }
 
+// Función de prueba para verificar conectividad
+export const testConnection = async () => {
+  try {
+    console.log('🔗 Testing Supabase connection...')
+    
+    // Probar consulta simple
+    const { error, count } = await supabase
+      .from('rooms')
+      .select('*', { count: 'exact', head: true })
+    
+    if (error) {
+      console.error('❌ Connection test failed:', error)
+      return { success: false, error }
+    } else {
+      console.log(`✅ Connection successful! Found ${count} rooms in database`)
+      return { success: true, count }
+    }
+  } catch (err) {
+    console.error('💥 Connection test exception:', err)
+    return { success: false, error: err }
+  }
+}
+
 // Funciones para salas multijugador
 export const roomHelpers = {
   // Crear una nueva sala
@@ -861,35 +884,118 @@ export const roomHelpers = {
 
   // Buscar sala por código
   findRoomByCode: async (code: string) => {
-    const { data, error } = await supabase
-      .from('rooms')
-      .select(`
-        *,
-        players (*),
-        game_sessions (*),
-        games (*)
-      `)
-      .eq('code', code)
-      .single()
-    return { data, error }
+    try {
+      console.log('🔍 Searching for room with code:', code)
+      
+      // Primero obtener la sala básica
+      const { data: roomData, error: roomError } = await supabase
+        .from('rooms')
+        .select('*')
+        .eq('code', code)
+        .single()
+      
+      if (roomError) {
+        console.log('❌ Room query error:', roomError)
+        return { data: null, error: roomError }
+      }
+      
+      if (!roomData) {
+        console.log('❌ No room found with code:', code)
+        return { data: null, error: { message: 'Room not found', code: 'ROOM_NOT_FOUND' } }
+      }
+      
+      console.log('✅ Room found:', roomData)
+      
+      // Luego obtener los jugadores de la sala
+      const { data: playersData, error: playersError } = await supabase
+        .from('players')
+        .select('*')
+        .eq('room_id', roomData.id)
+        .order('joined_at', { ascending: true })
+      
+      if (playersError) {
+        console.log('⚠️ Players query error:', playersError)
+        // Continuar sin jugadores si hay error
+      }
+      
+      // Combinar los datos
+      const completeRoomData = {
+        ...roomData,
+        players: playersData || []
+      }
+      
+      console.log('✅ Complete room data:', completeRoomData)
+      return { data: completeRoomData, error: null }
+      
+    } catch (err) {
+      console.error('💥 Unexpected error in findRoomByCode:', err)
+      return { 
+        data: null, 
+        error: { 
+          message: 'Error inesperado al buscar la sala',
+          originalError: err 
+        } 
+      }
+    }
   },
 
   // Unirse a una sala como jugador
   joinRoom: async (roomId: string, playerName: string, avatar: string, isHost = false) => {
-    const { data, error } = await supabase
-      .from('players')
-      .insert([
-        {
-          room_id: roomId,
-          name: playerName,
-          avatar,
-          is_host: isHost,
-          score: 0
+    try {
+      console.log('🎮 Attempting to join room:', { roomId, playerName, avatar, isHost })
+      
+      const playerData = {
+        room_id: roomId,
+        name: playerName,
+        avatar,
+        is_host: isHost,
+        score: 0
+      }
+      
+      const { data, error } = await supabase
+        .from('players')
+        .insert([playerData])
+        .select()
+        .single()
+      
+      if (error) {
+        console.error('❌ Join room error:', error)
+        
+        // Mejorar mensajes de error específicos
+        if (error.code === '23505') {
+          return { 
+            data: null, 
+            error: { 
+              ...error, 
+              message: 'Ya existe un jugador con ese nombre en la sala' 
+            } 
+          }
         }
-      ])
-      .select()
-      .single()
-    return { data, error }
+        
+        if (error.message?.includes('violates check constraint')) {
+          return { 
+            data: null, 
+            error: { 
+              ...error, 
+              message: 'Datos del jugador no válidos' 
+            } 
+          }
+        }
+      } else {
+        console.log('✅ Successfully joined room:', data)
+      }
+      
+      return { data, error }
+    } catch (err) {
+      console.error('💥 Unexpected error in joinRoom:', err)
+      return { 
+        data: null, 
+        error: { 
+          message: 'Error inesperado al unirse a la sala',
+          originalError: err 
+        } 
+      }
+    }
   },
 
   // Obtener jugadores de una sala
