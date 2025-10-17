@@ -1032,31 +1032,101 @@ export const roomHelpers = {
 
   // Crear sesión de juego para una sala
   createGameSession: async (roomId: string, gameId: string) => {
-    const { data, error } = await supabase
-      .from('game_sessions')
-      .insert([
-        {
-          room_id: roomId,
-          game_id: gameId,
-          current_question: 0
-        }
-      ])
-      .select()
-      .single()
-    return { data, error }
+    try {
+      console.log('🎮 Creating game session for room:', roomId, 'with game:', gameId)
+      
+      const sessionData = {
+        room_id: roomId,
+        game_id: gameId,
+        current_question: 0
+      }
+      
+      const { data, error } = await supabase
+        .from('game_sessions')
+        .insert([sessionData])
+        .select()
+        .single()
+      
+      if (error) {
+        console.error('❌ Error creating game session:', error)
+      } else {
+        console.log('✅ Game session created successfully:', data)
+      }
+      
+      return { data, error }
+    } catch (err) {
+      console.error('💥 Unexpected error in createGameSession:', err)
+      return { 
+        data: null, 
+        error: { 
+          message: 'Error inesperado al crear sesión de juego',
+          originalError: err 
+        } 
+      }
+    }
   },
 
   // Obtener sesión de juego activa de una sala
   getRoomGameSession: async (roomId: string) => {
-    const { data, error } = await supabase
-      .from('game_sessions')
-      .select(`
-        *,
-        games (*)
-      `)
-      .eq('room_id', roomId)
-      .single()
-    return { data, error }
+    try {
+      console.log('🔍 Getting game session for room:', roomId)
+      
+      // Primero obtener la sesión básica
+      const { data: sessionData, error: sessionError } = await supabase
+        .from('game_sessions')
+        .select('*')
+        .eq('room_id', roomId)
+        .single()
+      
+      if (sessionError) {
+        console.error('❌ Error getting game session:', sessionError)
+        return { data: null, error: sessionError }
+      }
+      
+      if (!sessionData) {
+        console.log('❌ No game session found for room:', roomId)
+        return { 
+          data: null, 
+          error: { 
+            message: 'No se encontró sesión de juego para esta sala',
+            code: 'SESSION_NOT_FOUND' 
+          } 
+        }
+      }
+      
+      console.log('✅ Game session found:', sessionData)
+      
+      // Luego obtener los datos del juego por separado
+      const { data: gameData, error: gameError } = await supabase
+        .from('games')
+        .select('*')
+        .eq('id', sessionData.game_id)
+        .single()
+      
+      if (gameError) {
+        console.log('⚠️ Game data query error:', gameError)
+        // Continuar sin datos de juego si hay error
+      }
+      
+      // Combinar los datos
+      const completeSessionData = {
+        ...sessionData,
+        games: gameData
+      }
+      
+      console.log('✅ Complete session data:', completeSessionData)
+      return { data: completeSessionData, error: null }
+      
+    } catch (err) {
+      console.error('💥 Unexpected error in getRoomGameSession:', err)
+      return { 
+        data: null, 
+        error: { 
+          message: 'Error inesperado al obtener sesión de juego',
+          originalError: err 
+        } 
+      }
+    }
   }
 }
 
@@ -1126,21 +1196,6 @@ export const qrHelpers = {
 
 // Funciones para respuestas y sesiones de juego
 export const sessionHelpers = {
-  // Crear sesión de juego
-  createGameSession: async (roomId: string, gameId: string) => {
-    const { data, error } = await supabase
-      .from('game_sessions')
-      .insert([
-        {
-          room_id: roomId,
-          game_id: gameId,
-          current_question: 0
-        }
-      ])
-      .select()
-      .single()
-    return { data, error }
-  },
 
   // Registrar respuesta de jugador
   recordPlayerAnswer: async (playerId: string, questionId: string, sessionId: string, answer: number, timeToAnswer: number, isCorrect: boolean, pointsEarned: number) => {
