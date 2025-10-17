@@ -56,6 +56,12 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
       setTimeLeft(gameToUse?.questions?.[0]?.time_limit || 30)
       console.log('🎯 Initial game loaded:', gameToUse?.title, 'Questions:', gameToUse?.questions?.length)
     }
+    
+    // IMPORTANTE: Si el participante se une a una sala ya en progreso, cargar el juego inmediatamente
+    if (!player.is_host && initialRoom.status === 'playing' && roomState === 'playing') {
+      console.log('🔄 Participant joining active game - loading immediately')
+      loadGameForParticipant()
+    }
   }, [])
 
   // Suscribirse a cambios en jugadores
@@ -94,9 +100,9 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
               setRoomState('playing')
               setGameState('question')
             } else {
-              // Los participantes necesitan cargar el juego desde game_sessions
-              console.log('👥 Participant loading game...')
-              handleGameStart()
+              // Los participantes necesitan cargar el juego desde múltiples fuentes
+              console.log('👥 Participant needs to load game immediately')
+              loadGameForParticipant()
             }
           }
         }
@@ -110,76 +116,21 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
 
   // Suscribirse a cambios en game_sessions para recibir el juego (TODOS los jugadores)
   useEffect(() => {
+    console.log('🔗 Setting up game session subscription for:', player.name, 'Room:', room.id)
+    
     const subscription = realtimeHelpers.subscribeToGameSession(
       room.id,
       async (payload) => {
-        console.log('🎯 Game session changed:', payload)
+        console.log('🎯 Game session changed for', player.name, ':', payload)
         
         if (payload.eventType === 'INSERT' && payload.new) {
           // Se creó una nueva sesión de juego
           console.log(`🎮 New game session detected for ${player.name}`)
           
           if (!player.is_host) {
-            // Los participantes intentan múltiples estrategias para obtener el juego
-            console.log('🔄 Participant trying to load game data...')
-            
-            // Estrategia 1: localStorage
-            try {
-              const storedGameData = localStorage.getItem(`game-data-${room.id}`)
-              if (storedGameData) {
-                const gameData = JSON.parse(storedGameData)
-                console.log('✅ Game loaded from localStorage for participant:', gameData.title, 'Questions:', gameData.questions?.length)
-                setCurrentGame(gameData)
-                setRoomState('playing')
-                setGameState('question')
-                setTimeLeft(gameData.questions?.[0]?.time_limit || 30)
-                return
-              }
-            } catch (err) {
-              console.log('⚠️ No game data in localStorage for participant')
-            }
-            
-            // Estrategia 2: Intentar obtener directamente el juego con fetch básico
-            try {
-              console.log('🔄 Trying basic game fetch for:', payload.new.game_id)
-              const { data: basicGameData } = await supabase
-                .from('games')
-                .select('*, questions(*)')
-                .eq('id', payload.new.game_id)
-                .single()
-              
-              if (basicGameData) {
-                console.log('✅ Game loaded via basic fetch for participant:', basicGameData.title, 'Questions:', basicGameData.questions?.length)
-                setCurrentGame(basicGameData)
-                setRoomState('playing')
-                setGameState('question')
-                setTimeLeft(basicGameData.questions?.[0]?.time_limit || 30)
-                return
-              }
-            } catch (err) {
-              console.log('⚠️ Basic game fetch failed:', err)
-            }
-            
-            // Fallback: usar datos básicos y esperar que funcione
-            console.log('⚠️ Participant will use basic game data, may not have questions')
-            setRoomState('playing')
-            setGameState('question')
-            setError('Conectando al juego...')
-            
-            // Intentar obtener el juego de la sesión existente
-            setTimeout(async () => {
-              try {
-                const { data: sessionData, error: sessionError } = await roomHelpers.getRoomGameSession(room.id)
-                if (!sessionError && sessionData?.games) {
-                  console.log('✅ Game loaded from session for participant:', sessionData.games.title)
-                  setCurrentGame(sessionData.games)
-                  setError(null)
-                  setTimeLeft(sessionData.games.questions?.[0]?.time_limit || 30)
-                }
-              } catch (err) {
-                console.error('❌ Final fallback failed:', err)
-              }
-            }, 1000)
+            // Los participantes cargan inmediatamente el juego
+            console.log('🔄 Participant loading game immediately after session creation')
+            await loadGameForParticipant()
           }
         }
       }
@@ -225,6 +176,31 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
       }
     }
   }, [player.is_host, roomState, currentGame, gameState])
+
+  // Efecto de recuperación para participantes: intentar cargar el juego cada 2 segundos si no tiene preguntas
+  useEffect(() => {
+    if (player.is_host || roomState !== 'playing' || gameState !== 'question') return
+    
+    // Si el participante está en un juego activo pero no tiene preguntas, intentar cargar
+    if (!currentGame?.questions?.length) {
+      console.log('🔄 Participant missing questions - attempting recovery')
+      const recoveryInterval = setInterval(() => {
+        console.log('🔄 Recovery attempt for participant')
+        loadGameForParticipant()
+      }, 2000)
+
+      // Limpiar el interval después de 30 segundos o cuando se obtengan las preguntas
+      const timeout = setTimeout(() => {
+        clearInterval(recoveryInterval)
+        console.log('⏰ Recovery timeout reached')
+      }, 30000)
+
+      return () => {
+        clearInterval(recoveryInterval)
+        clearTimeout(timeout)
+      }
+    }
+  }, [player.is_host, roomState, gameState, currentGame?.questions?.length])
 
   // Timer del juego
   useEffect(() => {
@@ -277,6 +253,113 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
     } catch (err) {
       console.error('Error:', err)
     }
+  }
+
+  const loadGameForParticipant = async () => {
+    console.log('🔄 Loading game for participant using multiple strategies...')
+    console.log('🔄 Current state:', { hasCurrentGame: !!currentGame, hasQuestions: !!currentGame?.questions?.length })
+    
+    // Si ya tenemos el juego con preguntas, no hacer nada
+    if (currentGame?.questions?.length) {
+      console.log('✅ Game already loaded with questions, skipping')
+      return
+    }
+    
+    // Estrategia 1: localStorage
+    try {
+      console.log('🔄 Strategy 1: Checking localStorage...')
+      const storedGameData = localStorage.getItem(`game-data-${room.id}`)
+      if (storedGameData) {
+        const gameData = JSON.parse(storedGameData)
+        if (gameData && gameData.questions && gameData.questions.length > 0) {
+          console.log('✅ Game loaded from localStorage:', gameData.title, 'Questions:', gameData.questions.length)
+          setCurrentGame(gameData)
+          setRoomState('playing')
+          setGameState('question')
+          setTimeLeft(gameData.questions[0]?.time_limit || 30)
+          setError(null)
+          return true
+        }
+      }
+      console.log('⚠️ No valid localStorage data')
+    } catch (err) {
+      console.log('⚠️ localStorage error:', err)
+    }
+    
+    // Estrategia 2: Obtener game_session para obtener game_id
+    try {
+      console.log('🔄 Strategy 2: Getting game session to find game_id...')
+      const { data: sessionData, error: sessionError } = await roomHelpers.getRoomGameSession(room.id)
+      
+      if (sessionError) {
+        console.log('⚠️ Session query error:', sessionError)
+      } else if (sessionData && sessionData.game_id) {
+        console.log('🔄 Found game_id:', sessionData.game_id, 'trying direct fetch...')
+        
+        // Usar el game_id para obtener el juego completo
+        const { data: gameData, error: gameError } = await supabase
+          .from('games')
+          .select('*, questions(*)')
+          .eq('id', sessionData.game_id)
+          .single()
+        
+        if (gameError) {
+          console.log('⚠️ Game fetch error:', gameError)
+        } else if (gameData && gameData.questions && gameData.questions.length > 0) {
+          console.log('✅ Game loaded via session + direct fetch:', gameData.title, 'Questions:', gameData.questions.length)
+          setCurrentGame(gameData)
+          setRoomState('playing')
+          setGameState('question')
+          setTimeLeft(gameData.questions[0]?.time_limit || 30)
+          setError(null)
+          return true
+        } else {
+          console.log('⚠️ Game found but no questions:', gameData)
+        }
+      } else {
+        console.log('⚠️ No session data found')
+      }
+    } catch (err) {
+      console.log('⚠️ Session + direct fetch failed:', err)
+    }
+    
+    // Estrategia 3: Broadcast Channel (escuchar por un momento)
+    try {
+      console.log('🔄 Strategy 3: Attempting Broadcast Channel...')
+      const gameChannel = new BroadcastChannel(`game-${room.id}`)
+      
+      return new Promise((resolve) => {
+        const timeout = setTimeout(() => {
+          gameChannel.close()
+          console.log('⚠️ Broadcast Channel timeout')
+          resolve(false)
+        }, 3000)
+        
+        gameChannel.onmessage = (event) => {
+          if (event.data.type === 'GAME_DATA' && event.data.game && event.data.game.questions) {
+            console.log('✅ Game received via Broadcast Channel:', event.data.game.title, 'Questions:', event.data.game.questions.length)
+            setCurrentGame(event.data.game)
+            setRoomState('playing')
+            setGameState('question')
+            setTimeLeft(event.data.game.questions[0]?.time_limit || 30)
+            setError(null)
+            clearTimeout(timeout)
+            gameChannel.close()
+            resolve(true)
+          }
+        }
+        
+        // Solicitar datos del juego
+        gameChannel.postMessage({ type: 'REQUEST_GAME_DATA' })
+      })
+    } catch (err) {
+      console.log('⚠️ Broadcast Channel failed:', err)
+    }
+    
+    // Estrategia 4: Error state
+    console.error('❌ All strategies failed for participant')
+    setError('Conectando al juego... Si el problema persiste, recarga la página.')
+    return false
   }
 
   const handleStartGameSetup = () => {
@@ -338,37 +421,6 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
     }
   }
 
-  const handleGameStart = async () => {
-    try {
-      console.log(`🎮 HandleGameStart called for player: ${player.name} (${player.is_host ? 'HOST' : 'PARTICIPANT'})`)
-      setLoading(true)
-      
-      // Obtener la sesión de juego
-      console.log('🔍 Fetching game session for room:', room.id)
-      const { data: sessionData, error: sessionError } = await roomHelpers.getRoomGameSession(room.id)
-      
-      if (sessionError || !sessionData) {
-        console.error('❌ Session error for', player.name, ':', sessionError)
-        setError('Error al cargar el juego: ' + (sessionError?.message || 'No data'))
-        return
-      }
-
-      console.log('✅ Session data loaded for', player.name, ':', sessionData)
-      console.log('✅ Game questions count:', sessionData.games?.questions?.length || 0)
-      
-      setCurrentGame(sessionData.games)
-      setRoomState('playing')
-      setGameState('question')
-      setCurrentQuestionIndex(0)
-      setTimeLeft(sessionData.games?.questions?.[0]?.time_limit || 30)
-      playGameStart()
-    } catch (err) {
-      setError('Error al iniciar el juego')
-      console.error('Error:', err)
-    } finally {
-      setLoading(false)
-    }
-  }
 
   const handleAnswerSelect = (answerIndex: number) => {
     if (selectedAnswer !== null || showAnswer || waitingForPlayers) return

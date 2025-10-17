@@ -180,6 +180,22 @@ const CreateRoom: React.FC<CreateRoomProps> = ({ onBack, onJoinRoom }) => {
         game: selectedGame
       })
       
+      // Escuchar solicitudes de datos del juego y responder
+      gameChannel.onmessage = (event) => {
+        if (event.data.type === 'REQUEST_GAME_DATA') {
+          console.log('📡 Game data requested via broadcast, sending:', selectedGame.title)
+          gameChannel.postMessage({
+            type: 'GAME_DATA',
+            game: selectedGame
+          })
+        }
+      }
+      
+      // Mantener el canal abierto por un tiempo para responder a solicitudes
+      setTimeout(() => {
+        gameChannel.close()
+      }, 10000)
+      
       // Crear sesión de juego (método original)
       const { error: sessionError } = await roomHelpers.createGameSession(
         room.id, 
