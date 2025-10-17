@@ -120,21 +120,30 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
           console.log(`🎮 New game session detected for ${player.name}`)
           
           if (!player.is_host) {
-            // Solo los participantes cargan el juego, el host ya lo tiene
-            try {
-              const { data: gameData, error: gameError } = await gameHelpers.getGameWithQuestions(payload.new.game_id)
-              
-              if (!gameError && gameData) {
-                console.log('✅ Game loaded for participant:', gameData.title, 'Questions:', gameData.questions?.length)
-                setCurrentGame(gameData)
-                setRoomState('playing')
-                setGameState('question')
-                setTimeLeft(gameData.questions?.[0]?.time_limit || 30)
-              } else {
-                console.error('❌ Error loading game for participant:', gameError)
+            // Los participantes reciben el juego directamente del game_session
+            if (payload.new.game_data) {
+              console.log('✅ Game data received for participant:', payload.new.game_data.title, 'Questions:', payload.new.game_data.questions?.length)
+              setCurrentGame(payload.new.game_data)
+              setRoomState('playing')
+              setGameState('question')
+              setTimeLeft(payload.new.game_data.questions?.[0]?.time_limit || 30)
+            } else {
+              // Fallback al método anterior si no hay game_data
+              try {
+                const { data: gameData, error: gameError } = await gameHelpers.getGameWithQuestions(payload.new.game_id)
+                
+                if (!gameError && gameData) {
+                  console.log('✅ Game loaded for participant (fallback):', gameData.title, 'Questions:', gameData.questions?.length)
+                  setCurrentGame(gameData)
+                  setRoomState('playing')
+                  setGameState('question')
+                  setTimeLeft(gameData.questions?.[0]?.time_limit || 30)
+                } else {
+                  console.error('❌ Error loading game for participant:', gameError)
+                }
+              } catch (err) {
+                console.error('❌ Exception loading game for participant:', err)
               }
-            } catch (err) {
-              console.error('❌ Exception loading game for participant:', err)
             }
           }
         }
@@ -333,13 +342,11 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
     console.log(`📊 Progreso respuestas: ${answeredPlayers}/${totalPlayers}`)
     
     if (answeredPlayers === totalPlayers) {
-      // Todos han respondido, mostrar respuestas y avanzar
+      // Todos han respondido, mostrar respuestas
       setShowAnswer(true)
       setWaitingForPlayers(false)
       
-      setTimeout(() => {
-        handleNextQuestion()
-      }, 3000)
+      // NO avanzar automáticamente - esperar que el host presione el botón
     } else {
       // Esperar a que otros respondan
       setWaitingForPlayers(true)
@@ -363,9 +370,7 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
     
     // TODO: Registrar respuesta por tiempo agotado
     
-    setTimeout(() => {
-      handleNextQuestion()
-    }, 3000)
+    // NO avanzar automáticamente - mostrar botón para el host
   }
 
   const handleNextQuestion = () => {
@@ -668,9 +673,38 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
                   }
                 </div>
                 
-                <div className="text-lg text-gray-600">
-                  Avanzando a la siguiente pregunta...
-                </div>
+                {/* Controles del host para avanzar */}
+                {player.is_host ? (
+                  <div className="space-y-4">
+                    <div className="text-lg text-gray-600 mb-4">
+                      Todos los jugadores han respondido
+                    </div>
+                    
+                    {currentQuestionIndex + 1 < (currentGame?.questions?.length || 0) ? (
+                      <button
+                        onClick={handleNextQuestion}
+                        className="btn-dominican-primary px-8 py-3 text-lg"
+                      >
+                        ▶️ Siguiente Pregunta ({currentQuestionIndex + 2} de {currentGame?.questions?.length})
+                      </button>
+                    ) : (
+                      <button
+                        onClick={handleNextQuestion}
+                        className="btn-dominican-primary px-8 py-3 text-lg"
+                      >
+                        🏁 Ver Resultados
+                      </button>
+                    )}
+                    
+                    <div className="text-sm text-gray-500">
+                      Solo el host puede avanzar a la siguiente pregunta
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-lg text-gray-600">
+                    Esperando que el host avance a la siguiente pregunta...
+                  </div>
+                )}
               </div>
             )}
           </div>

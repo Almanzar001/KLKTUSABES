@@ -170,10 +170,11 @@ const CreateRoom: React.FC<CreateRoomProps> = ({ onBack, onJoinRoom }) => {
       setLoading(true)
       setError(null)
       
-      // Crear sesión de juego
-      const { error: sessionError } = await roomHelpers.createGameSession(
+      // Crear sesión de juego CON EL JUEGO COMPLETO
+      const { error: sessionError } = await roomHelpers.createGameSessionWithFullGame(
         room.id, 
-        selectedGame.id
+        selectedGame.id,
+        selectedGame // Pasar el juego completo
       )
       
       if (sessionError) {
@@ -182,7 +183,7 @@ const CreateRoom: React.FC<CreateRoomProps> = ({ onBack, onJoinRoom }) => {
         return
       }
       
-      // Actualizar estado de la sala a 'playing' (volvemos al método original)
+      // Actualizar estado de la sala a 'playing'
       const { error: roomError } = await roomHelpers.updateRoomStatus(room.id, 'playing')
       
       if (roomError) {

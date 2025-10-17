@@ -1089,6 +1089,43 @@ export const roomHelpers = {
     }
   },
 
+  // Crear sesión de juego con datos completos del juego
+  createGameSessionWithFullGame: async (roomId: string, gameId: string, fullGameData: any) => {
+    try {
+      console.log('🎯 Creating game session with full game data:', fullGameData?.title, 'Questions:', fullGameData?.questions?.length)
+      
+      const sessionData = {
+        room_id: roomId,
+        game_id: gameId,
+        current_question: 0,
+        game_data: fullGameData // Almacenar el juego completo
+      }
+      
+      const { data, error } = await supabase
+        .from('game_sessions')
+        .insert([sessionData])
+        .select()
+        .single()
+      
+      if (error) {
+        console.error('❌ Error creating game session with full data:', error)
+      } else {
+        console.log('✅ Game session with full data created successfully:', data)
+      }
+      
+      return { data, error }
+    } catch (err) {
+      console.error('💥 Unexpected error in createGameSessionWithFullGame:', err)
+      return { 
+        data: null, 
+        error: { 
+          message: 'Error inesperado al crear sesión de juego completa',
+          originalError: err 
+        } 
+      }
+    }
+  },
+
   // Obtener sesión de juego activa de una sala
   getRoomGameSession: async (roomId: string) => {
     try {
