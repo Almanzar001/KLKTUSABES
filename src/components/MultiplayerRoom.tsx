@@ -387,6 +387,15 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
     )
   }
 
+  // Debug: mostrar estado actual
+  console.log('🎯 MultiplayerRoom Debug:', {
+    roomState,
+    gameState,
+    currentGame: currentGame?.title || 'No game',
+    currentQuestionIndex,
+    hasQuestions: !!currentGame?.questions?.length
+  })
+
   // Renderizar juego activo
   if (roomState === 'playing' && currentGame && gameState === 'question') {
     const currentQuestion = currentGame.questions?.[currentQuestionIndex]
@@ -544,7 +553,26 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
     )
   }
 
-  return null
+  // Renderizado por defecto para debugging
+  return (
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="bg-white rounded-xl shadow-lg p-8 max-w-md w-full">
+        <h2 className="text-2xl font-bold text-gray-800 mb-4">Debug Info</h2>
+        <div className="space-y-2 text-sm">
+          <p><strong>Room State:</strong> {roomState}</p>
+          <p><strong>Game State:</strong> {gameState}</p>
+          <p><strong>Current Game:</strong> {currentGame?.title || 'No game selected'}</p>
+          <p><strong>Has Questions:</strong> {currentGame?.questions?.length || 0} questions</p>
+          <p><strong>Current Question Index:</strong> {currentQuestionIndex}</p>
+          <p><strong>Loading:</strong> {loading ? 'Yes' : 'No'}</p>
+          {error && <p className="text-red-600"><strong>Error:</strong> {error}</p>}
+        </div>
+        <button onClick={onBack} className="btn-dominican-primary mt-4 w-full">
+          Volver al Inicio
+        </button>
+      </div>
+    </div>
+  )
 }
 
 export default MultiplayerRoom
