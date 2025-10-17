@@ -22,12 +22,16 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
   // Estados principales
   const [room, setRoom] = useState<Room>(initialRoom)
   const [players, setPlayers] = useState<Player[]>([])
-  const [roomState, setRoomState] = useState<RoomState>('lobby')
-  const [gameState, setGameState] = useState<GameState>('waiting')
+  const [roomState, setRoomState] = useState<RoomState>(
+    initialRoom.status === 'playing' && initialRoom.game ? 'playing' : 'lobby'
+  )
+  const [gameState, setGameState] = useState<GameState>(
+    initialRoom.status === 'playing' && initialRoom.game ? 'question' : 'waiting'
+  )
   const [games, setGames] = useState<Game[]>([])
   
   // Estados del juego
-  const [currentGame, setCurrentGame] = useState<Game | null>(null)
+  const [currentGame, setCurrentGame] = useState<Game | null>(initialRoom.game || null)
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0)
   const [timeLeft, setTimeLeft] = useState(30)
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null)
@@ -41,6 +45,11 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
   useEffect(() => {
     loadPlayers()
     loadGames()
+    
+    // Si ya hay un juego cargado, inicializar timer
+    if (initialRoom.game && roomState === 'playing') {
+      setTimeLeft(initialRoom.game.questions?.[0]?.time_limit || 30)
+    }
   }, [])
 
   // Suscribirse a cambios en jugadores
@@ -405,7 +414,9 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
     gameState,
     currentGame: currentGame?.title || 'No game',
     currentQuestionIndex,
-    hasQuestions: !!currentGame?.questions?.length
+    hasQuestions: !!currentGame?.questions?.length,
+    initialRoomGame: initialRoom.game?.title || 'No initial game',
+    initialRoomGameQuestions: initialRoom.game?.questions?.length || 0
   })
 
   // Renderizar juego activo
