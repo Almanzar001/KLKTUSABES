@@ -36,6 +36,8 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
   const [timeLeft, setTimeLeft] = useState(30)
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null)
   const [showAnswer, setShowAnswer] = useState(false)
+  const [playerAnswers, setPlayerAnswers] = useState<{[playerId: string]: number | null}>({})
+  const [waitingForPlayers, setWaitingForPlayers] = useState(false)
   
   // Estados de la UI
   const [loading, setLoading] = useState(false)
@@ -213,11 +215,13 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
         return
       }
 
+      console.log('✅ Session data loaded for participants:', sessionData)
+      
       setCurrentGame(sessionData.games)
       setRoomState('playing')
       setGameState('question')
       setCurrentQuestionIndex(0)
-      setTimeLeft(sessionData.games.questions?.[0]?.time_limit || 30)
+      setTimeLeft(sessionData.games?.questions?.[0]?.time_limit || 30)
       playGameStart()
     } catch (err) {
       setError('Error al iniciar el juego')
@@ -228,36 +232,64 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
   }
 
   const handleAnswerSelect = (answerIndex: number) => {
-    if (selectedAnswer !== null || showAnswer) return
+    if (selectedAnswer !== null || showAnswer || waitingForPlayers) return
 
     setSelectedAnswer(answerIndex)
-    setShowAnswer(true)
     
     const currentQuestion = currentGame?.questions?.[currentQuestionIndex]
     if (!currentQuestion) return
 
-    const isCorrect = answerIndex === currentQuestion.correct_answer
+    // Actualizar las respuestas locales
+    const newPlayerAnswers = {
+      ...playerAnswers,
+      [player.id]: answerIndex
+    }
+    setPlayerAnswers(newPlayerAnswers)
     
-    // Reproducir sonido
+    // Reproducir sonido basado en si es correcto
+    const isCorrect = answerIndex === currentQuestion.correct_answer
     if (isCorrect) {
       playCorrect()
     } else {
       playIncorrect()
     }
 
-    // TODO: Enviar respuesta al servidor y actualizar puntuación
+    // TODO: Enviar respuesta al servidor
     
-    // Avanzar a la siguiente pregunta después de 3 segundos
-    setTimeout(() => {
-      handleNextQuestion()
-    }, 3000)
+    // Verificar si todos los jugadores han respondido
+    const totalPlayers = players.length
+    const answeredPlayers = Object.keys(newPlayerAnswers).filter(id => newPlayerAnswers[id] !== null).length
+    
+    console.log(`📊 Progreso respuestas: ${answeredPlayers}/${totalPlayers}`)
+    
+    if (answeredPlayers === totalPlayers) {
+      // Todos han respondido, mostrar respuestas y avanzar
+      setShowAnswer(true)
+      setWaitingForPlayers(false)
+      
+      setTimeout(() => {
+        handleNextQuestion()
+      }, 3000)
+    } else {
+      // Esperar a que otros respondan
+      setWaitingForPlayers(true)
+    }
   }
 
   const handleTimeUp = () => {
-    if (showAnswer || selectedAnswer !== null) return
+    if (showAnswer) return
     
     playTimeUp()
     setShowAnswer(true)
+    setWaitingForPlayers(false)
+    
+    // Si no respondió, marcar como null
+    if (selectedAnswer === null) {
+      setPlayerAnswers(prev => ({
+        ...prev,
+        [player.id]: null
+      }))
+    }
     
     // TODO: Registrar respuesta por tiempo agotado
     
@@ -272,9 +304,12 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
     const nextIndex = currentQuestionIndex + 1
     
     if (nextIndex < currentGame.questions.length) {
+      // Resetear estados para la siguiente pregunta
       setCurrentQuestionIndex(nextIndex)
       setSelectedAnswer(null)
       setShowAnswer(false)
+      setPlayerAnswers({}) // Limpiar respuestas anteriores
+      setWaitingForPlayers(false)
       setTimeLeft(currentGame.questions[nextIndex].time_limit || 30)
       setGameState('question')
     } else {
@@ -503,9 +538,29 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
               </div>
             )}
             
-            <h2 className="text-2xl font-bold text-gray-800 mb-8 text-center">
+            <h2 className="text-2xl font-bold text-gray-800 mb-6 text-center">
               {currentQuestion.text}
             </h2>
+            
+            {/* Progreso de respuestas tipo Kahoot */}
+            {(waitingForPlayers || showAnswer) && (
+              <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg text-center">
+                {waitingForPlayers ? (
+                  <div>
+                    <p className="text-blue-800 font-semibold">
+                      Esperando respuestas...
+                    </p>
+                    <p className="text-blue-600 text-sm">
+                      {Object.keys(playerAnswers).filter(id => playerAnswers[id] !== null).length} de {players.length} jugadores han respondido
+                    </p>
+                  </div>
+                ) : showAnswer && (
+                  <p className="text-green-800 font-semibold">
+                    ¡Todos los jugadores han respondido!
+                  </p>
+                )}
+              </div>
+            )}
             
             <div className="grid md:grid-cols-2 gap-4">
               {currentQuestion.options.map((option, index) => (
