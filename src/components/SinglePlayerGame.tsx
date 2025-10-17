@@ -56,7 +56,7 @@ const SinglePlayerGame: React.FC<SinglePlayerGameProps> = ({
   const [questionStartTime, setQuestionStartTime] = useState<number>(0)
   
   // Estados de la UI
-  const [loading, setLoading] = useState(false)
+  // const [loading, setLoading] = useState(false) // Currently unused
 
   // Si es sesión QR y tenemos juego, ir directo a selección
   useEffect(() => {
@@ -122,7 +122,6 @@ const SinglePlayerGame: React.FC<SinglePlayerGameProps> = ({
 
   const loadGames = async () => {
     try {
-      setLoading(true)
       const { data, error } = await gameHelpers.getAllGames()
       
       if (error) {
@@ -133,8 +132,6 @@ const SinglePlayerGame: React.FC<SinglePlayerGameProps> = ({
       setGames(data || [])
     } catch (err) {
       console.error('Error:', err)
-    } finally {
-      setLoading(false)
     }
   }
 

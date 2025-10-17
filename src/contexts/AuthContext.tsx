@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react'
-import { User, Session, AuthError } from '@supabase/supabase-js'
+import { User, Session } from '@supabase/supabase-js'
 import { supabase, authHelpers } from '../supabase'
 import { UserProfile } from '../types'
 
@@ -92,7 +92,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         
         // Si falla por timeout, intentar obtener desde localStorage
         try {
-            const storageKey = `sb-${import.meta.env.VITE_SUPABASE_URL.split('//')[1].split('.')[0]}-auth-token`
+            const supabaseUrl = (import.meta as any).env.VITE_SUPABASE_URL
+            const storageKey = `sb-${supabaseUrl.split('//')[1].split('.')[0]}-auth-token`
           const storedSession = localStorage.getItem(storageKey)
           
           if (storedSession) {
@@ -116,7 +117,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     // Escuchar cambios en el estado de autenticación
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
+      async (_event, session) => {
         
         setSession(session)
         setUser(session?.user ?? null)

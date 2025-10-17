@@ -63,7 +63,7 @@ const JoinRoom: React.FC<JoinRoomProps> = ({ onBack, onJoinRoom }) => {
       }
 
       // Verificar si el nombre ya está en uso
-      const nameInUse = roomData.players?.some(player => 
+      const nameInUse = roomData.players?.some((player: any) => 
         player.name.toLowerCase() === playerName.trim().toLowerCase()
       )
       

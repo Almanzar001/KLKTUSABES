@@ -83,7 +83,7 @@ const QRGameCreator: React.FC<QRGameCreatorProps> = ({ onBack }) => {
       const accessCode = generateQRCode()
 
       // Crear sesión QR
-      const { data, error } = await qrHelpers.createQRSession(
+      const { error } = await qrHelpers.createQRSession(
         accessCode,
         selectedGameId,
         sessionTitle.trim(),

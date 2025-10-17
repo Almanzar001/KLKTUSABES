@@ -89,14 +89,14 @@ const QuestionEditor: React.FC<QuestionEditorProps> = ({
 
       if (question) {
         // Actualizar pregunta existente
-        const { data, error } = await gameHelpers.updateQuestion(question.id, questionData)
+        const { error } = await gameHelpers.updateQuestion(question.id, questionData)
         
         if (error) {
           
           // Mostrar error más específico
           let errorMessage = 'Error al actualizar la pregunta'
           
-          if (error.code === 'TIMEOUT') {
+          if (error && typeof error === 'object' && 'code' in error && error.code === 'TIMEOUT') {
             errorMessage = 'La operación tardó demasiado tiempo. Posibles causas:\n• Problemas de conexión a internet\n• Configuración incorrecta de Supabase\n• Problemas con los permisos de la base de datos'
           } else if (typeof error === 'object' && error.message) {
             errorMessage += `: ${error.message}`
@@ -120,14 +120,14 @@ const QuestionEditor: React.FC<QuestionEditorProps> = ({
 
       } else {
         // Crear nueva pregunta
-        const { data, error } = await gameHelpers.addQuestion(game.id, questionData)
+        const { error } = await gameHelpers.addQuestion(game.id, questionData)
         
         if (error) {
           
           // Mostrar error más específico
           let errorMessage = 'Error al guardar la pregunta'
           
-          if (error.code === 'TIMEOUT') {
+          if (error && typeof error === 'object' && 'code' in error && error.code === 'TIMEOUT') {
             errorMessage = 'La operación tardó demasiado tiempo. Posibles causas:\n• Problemas de conexión a internet\n• Configuración incorrecta de Supabase\n• Problemas con los permisos de la base de datos'
           } else if (typeof error === 'object' && error.message) {
             errorMessage += `: ${error.message}`

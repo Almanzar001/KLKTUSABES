@@ -41,7 +41,7 @@ const CreateRoom: React.FC<CreateRoomProps> = ({ onBack, onJoinRoom }) => {
 
     const subscription = realtimeHelpers.subscribeToRoomPlayers(
       room.id,
-      (payload) => {
+      () => {
         loadRoomPlayers()
       }
     )

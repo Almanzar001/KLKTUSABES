@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Plus, Edit, Trash2, Play, Save, ArrowLeft } from 'lucide-react'
+import { Plus, Edit, Trash2, ArrowLeft } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { gameHelpers } from '../supabase'
 import { Game, Question } from '../types'
@@ -165,7 +165,7 @@ const GameEditor: React.FC<GameEditorProps> = ({ onBack }) => {
       setSaving(true)
       setError(null)
 
-      const { data, error } = await gameHelpers.updateGame(editingGame.id, {
+      const { error } = await gameHelpers.updateGame(editingGame.id, {
         title: editGameTitle.trim(),
         description: editGameDescription.trim()
       })

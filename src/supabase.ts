@@ -1,8 +1,8 @@
 import { createClient } from '@supabase/supabase-js'
 
 // Configuración de Supabase
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+const supabaseUrl = (import.meta as any).env.VITE_SUPABASE_URL
+const supabaseAnonKey = (import.meta as any).env.VITE_SUPABASE_ANON_KEY
 
 if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Variables de entorno de Supabase no encontradas. Por favor configura VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY')
@@ -736,7 +736,7 @@ export const statsHelpers = {
       } catch (e) {}
 
       // Obtener estadísticas del usuario en paralelo
-      const [gamesResponse, qrSessionsResponse, questionsResponse] = await Promise.all([
+      const [gamesResponse, qrSessionsResponse] = await Promise.all([
         // Juegos creados por el usuario
         fetch(`${supabaseUrl}/rest/v1/games?select=id,title,created_at,questions(count)&created_by_user=eq.${userId}`, {
           headers: {
@@ -753,19 +753,11 @@ export const statsHelpers = {
           }
         }),
 
-        // Total de preguntas creadas
-        fetch(`${supabaseUrl}/rest/v1/questions?select=id&game_id=in.(${await getUserGameIds(userId, authToken)})`, {
-          headers: {
-            'apikey': supabaseAnonKey,
-            'Authorization': `Bearer ${authToken || supabaseAnonKey}`,
-          }
-        })
       ])
 
-      const [gamesData, qrSessionsData, questionsData] = await Promise.all([
+      const [gamesData, qrSessionsData] = await Promise.all([
         gamesResponse.ok ? gamesResponse.json() : [],
         qrSessionsResponse.ok ? qrSessionsResponse.json() : [],
-        questionsResponse.ok ? questionsResponse.json() : []
       ])
 
       // Calcular estadísticas realistas para el usuario específico
@@ -790,7 +782,7 @@ export const statsHelpers = {
         qrSessions: qrSessionsData.length || 0,
         activePlayers: estimatedActivePlayers,
         totalMatches: estimatedMatches,
-        recentGames: gamesData.slice(0, 3).map(game => ({
+        recentGames: gamesData.slice(0, 3).map((game: any) => ({
           id: game.id,
           title: game.title,
           questions: Math.floor(Math.random() * 20) + 5, // Simulado por ahora
@@ -813,25 +805,25 @@ export const statsHelpers = {
   }
 }
 
-// Función auxiliar para obtener IDs de juegos del usuario
-const getUserGameIds = async (userId: string, authToken: string | null) => {
-  try {
-    const response = await fetch(`${supabaseUrl}/rest/v1/games?select=id&created_by_user=eq.${userId}`, {
-      headers: {
-        'apikey': supabaseAnonKey,
-        'Authorization': `Bearer ${authToken || supabaseAnonKey}`,
-      }
-    })
+// Función auxiliar para obtener IDs de juegos del usuario (actualmente no utilizada)
+// const getUserGameIds = async (userId: string, authToken: string | null) => {
+//   try {
+//     const response = await fetch(`${supabaseUrl}/rest/v1/games?select=id&created_by_user=eq.${userId}`, {
+//       headers: {
+//         'apikey': supabaseAnonKey,
+//         'Authorization': `Bearer ${authToken || supabaseAnonKey}`,
+//       }
+//     })
     
-    if (response.ok) {
-      const games = await response.json()
-      return games.map((g: any) => g.id).join(',')
-    }
-    return ''
-  } catch {
-    return ''
-  }
-}
+//     if (response.ok) {
+//       const games = await response.json()
+//       return games.map((g: any) => g.id).join(',')
+//     }
+//     return ''
+//   } catch {
+//     return ''
+//   }
+// }
 
 // Función auxiliar para formatear tiempo relativo
 const formatRelativeTime = (dateString: string) => {
