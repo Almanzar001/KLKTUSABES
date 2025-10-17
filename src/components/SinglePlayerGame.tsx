@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { ArrowLeft, Play, Clock, CheckCircle, X, RotateCcw } from 'lucide-react'
+import { ArrowLeft, Play, CheckCircle, X, RotateCcw } from 'lucide-react'
 import { gameHelpers } from '../supabase'
 import { Game, Question, calculatePoints } from '../types'
 import GameSelector from './GameSelector'
@@ -67,7 +67,7 @@ const SinglePlayerGame: React.FC<SinglePlayerGameProps> = ({
     }
   }, [isQRSession, selectedGame])
 
-  // Timer del juego
+  // Timer del juego con efectos visuales y sonoros mejorados
   useEffect(() => {
     if (gameState !== 'playing' || showAnswer) return
 
@@ -77,11 +77,23 @@ const SinglePlayerGame: React.FC<SinglePlayerGameProps> = ({
           handleTimeUp()
           return 0
         }
-        // Sonido de tick cuando quedan 5 segundos o menos
-        if (prev <= 5) {
+        
+        const newTime = prev - 1
+        
+        // Sonidos del temporizador
+        if (newTime <= 10 && newTime > 5) {
+          // Tick suave para los últimos 10 segundos
           playTick()
+        } else if (newTime <= 5 && newTime > 0) {
+          // Tick más urgente para los últimos 5 segundos
+          playTick()
+          // Añadir vibración en dispositivos móviles si está disponible
+          if ('vibrate' in navigator && newTime <= 3) {
+            navigator.vibrate(100)
+          }
         }
-        return prev - 1
+        
+        return newTime
       })
     }, 1000)
 
@@ -387,16 +399,104 @@ const SinglePlayerGame: React.FC<SinglePlayerGameProps> = ({
                 </h1>
               </div>
               
-              <div className="flex items-center gap-4">
-                <div className="flex items-center gap-2 text-gray-600">
-                  <Clock className="w-5 h-5" />
-                  <span className={`font-bold ${timeLeft <= 5 ? 'text-red-600' : ''}`}>
-                    {timeLeft}s
-                  </span>
+              <div className="flex items-center gap-6">
+                {/* Temporizador circular mejorado */}
+                <div className="relative flex items-center justify-center">
+                  <svg
+                    className={`w-20 h-20 ${
+                      timeLeft <= 5 
+                        ? 'timer-critical' 
+                        : timeLeft <= 10 
+                        ? 'timer-warning' 
+                        : 'timer-normal transform -rotate-90'
+                    }`}
+                    viewBox="0 0 64 64"
+                  >
+                    {/* Círculo de fondo */}
+                    <circle
+                      cx="32"
+                      cy="32"
+                      r="28"
+                      fill="none"
+                      stroke="#f3f4f6"
+                      strokeWidth="3"
+                    />
+                    {/* Círculo de fondo sutil */}
+                    <circle
+                      cx="32"
+                      cy="32"
+                      r="28"
+                      fill="none"
+                      stroke="#e5e7eb"
+                      strokeWidth="6"
+                      opacity="0.3"
+                    />
+                    {/* Círculo de progreso principal */}
+                    <circle
+                      cx="32"
+                      cy="32"
+                      r="28"
+                      fill="none"
+                      stroke={
+                        timeLeft <= 5 
+                          ? '#dc2626' 
+                          : timeLeft <= 10 
+                          ? '#f59e0b' 
+                          : '#10b981'
+                      }
+                      strokeWidth="6"
+                      strokeDasharray={`${(timeLeft / currentQuestion.time_limit) * 175.929} 175.929`}
+                      strokeLinecap="round"
+                      className="transition-all duration-1000 ease-linear"
+                    />
+                    {/* Círculo de brillo interior */}
+                    <circle
+                      cx="32"
+                      cy="32"
+                      r="28"
+                      fill="none"
+                      stroke={
+                        timeLeft <= 5 
+                          ? '#fca5a5' 
+                          : timeLeft <= 10 
+                          ? '#fbbf24' 
+                          : '#6ee7b7'
+                      }
+                      strokeWidth="2"
+                      strokeDasharray={`${(timeLeft / currentQuestion.time_limit) * 175.929} 175.929`}
+                      strokeLinecap="round"
+                      className="transition-all duration-1000 ease-linear"
+                      opacity="0.6"
+                    />
+                  </svg>
+                  {/* Número del temporizador con efectos mejorados */}
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <span 
+                      className={`font-bold text-2xl transition-all duration-300 ${
+                        timeLeft <= 5 
+                          ? 'text-red-600 timer-number-critical' 
+                          : timeLeft <= 10 
+                          ? 'text-amber-600 timer-number-warning' 
+                          : 'text-green-600 timer-number-normal'
+                      }`}
+                    >
+                      {timeLeft}
+                    </span>
+                  </div>
+                  
+                  {/* Indicador de urgencia adicional */}
+                  {timeLeft <= 3 && (
+                    <div className="absolute -inset-2 rounded-full border-2 border-red-500 animate-ping opacity-30"></div>
+                  )}
                 </div>
                 
                 <div className="text-sm text-gray-600">
-                  {currentQuestionIndex + 1} de {selectedGame.questions.length}
+                  <div className="font-semibold">
+                    Pregunta {currentQuestionIndex + 1} de {selectedGame.questions.length}
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    {answers.reduce((total, answer) => total + answer.pointsEarned, 0)} puntos
+                  </div>
                 </div>
               </div>
             </div>
