@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { ArrowLeft, Users, Crown, Play } from 'lucide-react'
 // import { useAuth } from '../contexts/AuthContext' // Currently unused
-import { roomHelpers, realtimeHelpers, gameHelpers } from '../supabase'
+import { roomHelpers, realtimeHelpers, gameHelpers, supabase } from '../supabase'
 import { Room, Player, Game } from '../types'
 import { useGameSounds } from '../hooks/useGameSounds'
 import GameSelector from './GameSelector'
@@ -120,7 +120,10 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
           console.log(`🎮 New game session detected for ${player.name}`)
           
           if (!player.is_host) {
-            // Los participantes intentan cargar desde localStorage primero
+            // Los participantes intentan múltiples estrategias para obtener el juego
+            console.log('🔄 Participant trying to load game data...')
+            
+            // Estrategia 1: localStorage
             try {
               const storedGameData = localStorage.getItem(`game-data-${room.id}`)
               if (storedGameData) {
@@ -134,6 +137,27 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
               }
             } catch (err) {
               console.log('⚠️ No game data in localStorage for participant')
+            }
+            
+            // Estrategia 2: Intentar obtener directamente el juego con fetch básico
+            try {
+              console.log('🔄 Trying basic game fetch for:', payload.new.game_id)
+              const { data: basicGameData } = await supabase
+                .from('games')
+                .select('*, questions(*)')
+                .eq('id', payload.new.game_id)
+                .single()
+              
+              if (basicGameData) {
+                console.log('✅ Game loaded via basic fetch for participant:', basicGameData.title, 'Questions:', basicGameData.questions?.length)
+                setCurrentGame(basicGameData)
+                setRoomState('playing')
+                setGameState('question')
+                setTimeLeft(basicGameData.questions?.[0]?.time_limit || 30)
+                return
+              }
+            } catch (err) {
+              console.log('⚠️ Basic game fetch failed:', err)
             }
             
             // Fallback: usar datos básicos y esperar que funcione
@@ -165,6 +189,31 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
       realtimeHelpers.unsubscribe(subscription)
     }
   }, [room.id, player.is_host, player.name])
+
+  // Suscribirse a Broadcast Channel para recibir datos de juego
+  useEffect(() => {
+    if (player.is_host) return // El host no necesita escuchar
+    
+    const gameChannel = new BroadcastChannel(`game-${room.id}`)
+    
+    gameChannel.onmessage = (event) => {
+      console.log('📡 Broadcast message received by participant:', event.data)
+      
+      if (event.data.type === 'GAME_DATA' && event.data.game) {
+        console.log('✅ Game data received via broadcast:', event.data.game.title, 'Questions:', event.data.game.questions?.length)
+        setCurrentGame(event.data.game)
+        if (roomState === 'playing') {
+          setGameState('question')
+          setTimeLeft(event.data.game.questions?.[0]?.time_limit || 30)
+          setError(null)
+        }
+      }
+    }
+    
+    return () => {
+      gameChannel.close()
+    }
+  }, [room.id, player.is_host, roomState])
 
   // Efecto especial para el host: iniciar el juego automáticamente si ya tiene los datos
   useEffect(() => {

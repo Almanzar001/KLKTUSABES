@@ -173,6 +173,13 @@ const CreateRoom: React.FC<CreateRoomProps> = ({ onBack, onJoinRoom }) => {
       // Almacenar el juego en localStorage como fallback
       localStorage.setItem(`game-data-${room.id}`, JSON.stringify(selectedGame))
       
+      // También usar Broadcast Channel para compartir en tiempo real
+      const gameChannel = new BroadcastChannel(`game-${room.id}`)
+      gameChannel.postMessage({
+        type: 'GAME_DATA',
+        game: selectedGame
+      })
+      
       // Crear sesión de juego (método original)
       const { error: sessionError } = await roomHelpers.createGameSession(
         room.id, 
