@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react'
 import { ArrowLeft, Users, Crown, Play } from 'lucide-react'
 // import { useAuth } from '../contexts/AuthContext' // Currently unused
-import { roomHelpers, realtimeHelpers } from '../supabase'
+import { roomHelpers, realtimeHelpers, gameHelpers } from '../supabase'
 import { Room, Player, Game } from '../types'
 import { useGameSounds } from '../hooks/useGameSounds'
+import GameSelector from './GameSelector'
 
 interface MultiplayerRoomProps {
   room: Room
@@ -11,7 +12,7 @@ interface MultiplayerRoomProps {
   onBack: () => void
 }
 
-type RoomState = 'lobby' | 'playing' | 'results' | 'finished'
+type RoomState = 'lobby' | 'game-select' | 'playing' | 'results' | 'finished'
 type GameState = 'waiting' | 'question' | 'answer' | 'leaderboard'
 
 const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, player, onBack }) => {
@@ -23,6 +24,7 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
   const [players, setPlayers] = useState<Player[]>([])
   const [roomState, setRoomState] = useState<RoomState>('lobby')
   const [gameState, setGameState] = useState<GameState>('waiting')
+  const [games, setGames] = useState<Game[]>([])
   
   // Estados del juego
   const [currentGame, setCurrentGame] = useState<Game | null>(null)
@@ -35,9 +37,10 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Cargar jugadores inicial
+  // Cargar jugadores inicial y juegos
   useEffect(() => {
     loadPlayers()
+    loadGames()
   }, [])
 
   // Suscribirse a cambios en jugadores
@@ -113,6 +116,66 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
       setPlayers(data || [])
     } catch (err) {
       console.error('Error:', err)
+    }
+  }
+
+  const loadGames = async () => {
+    try {
+      const { data, error } = await gameHelpers.getAllGames()
+      if (error) {
+        console.error('Error loading games:', error)
+        return
+      }
+      setGames(data || [])
+    } catch (err) {
+      console.error('Error:', err)
+    }
+  }
+
+  const handleStartGameSetup = () => {
+    setRoomState('game-select')
+  }
+
+  const handleGameSelected = async (selectedGame: Game) => {
+    try {
+      setLoading(true)
+      setError(null)
+      
+      // Crear sesión de juego
+      const { error: sessionError } = await roomHelpers.createGameSession(
+        room.id, 
+        selectedGame.id
+      )
+      
+      if (sessionError) {
+        setError('Error al crear la sesión de juego')
+        console.error('Session error:', sessionError)
+        return
+      }
+      
+      // Actualizar estado de la sala a 'playing'
+      const { error: roomError } = await roomHelpers.updateRoomStatus(room.id, 'playing')
+      
+      if (roomError) {
+        setError('Error al iniciar el juego')
+        console.error('Room error:', roomError)
+        return
+      }
+      
+      setCurrentGame(selectedGame)
+      setRoom(prev => ({ ...prev, status: 'playing' }))
+      
+      // Iniciar el juego directamente
+      setRoomState('playing')
+      setGameState('question')
+      setCurrentQuestionIndex(0)
+      setTimeLeft(selectedGame.questions?.[0]?.time_limit || 30)
+      playGameStart()
+    } catch (err) {
+      setError('Error al iniciar el juego')
+      console.error('Error:', err)
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -285,7 +348,7 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
               
               {room.status === 'waiting' && players.length >= 2 && (
                 <button
-                  onClick={() => {/* TODO: Implementar iniciar juego */}}
+                  onClick={handleStartGameSetup}
                   disabled={loading}
                   className="btn-dominican-secondary"
                 >
@@ -309,6 +372,18 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
           )}
         </div>
       </div>
+    )
+  }
+
+  // Renderizar selector de juegos
+  if (roomState === 'game-select') {
+    return (
+      <GameSelector
+        games={games}
+        onSelectGame={handleGameSelected}
+        onBack={() => setRoomState('lobby')}
+        title={`Selecciona un Juego para ${room.name}`}
+      />
     )
   }
 
