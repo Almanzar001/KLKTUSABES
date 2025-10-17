@@ -1282,6 +1282,23 @@ export const realtimeHelpers = {
       .subscribe()
   },
 
+  // Suscribirse a cambios en sesiones de juego
+  subscribeToGameSession: (roomId: string, callback: (payload: any) => void) => {
+    return supabase
+      .channel(`room-${roomId}-game-session`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'game_sessions',
+          filter: `room_id=eq.${roomId}`
+        },
+        callback
+      )
+      .subscribe()
+  },
+
   // Desuscribirse de un canal
   unsubscribe: (subscription: any) => {
     return supabase.removeChannel(subscription)
