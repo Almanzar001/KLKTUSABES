@@ -14,10 +14,11 @@ const CreateRoom: React.FC<CreateRoomProps> = ({ onBack, onJoinRoom }) => {
   const { user, userProfile } = useAuth()
   
   // Estados principales
-  const [currentStep, setCurrentStep] = useState<'setup' | 'waiting' | 'game-select'>('setup')
+  const [currentStep, setCurrentStep] = useState<'game-select' | 'setup' | 'waiting'>('game-select')
   const [room, setRoom] = useState<Room | null>(null)
   const [players, setPlayers] = useState<Player[]>([])
   const [games, setGames] = useState<Game[]>([])
+  const [selectedGame, setSelectedGame] = useState<Game | null>(null)
   
   // Estados del formulario
   const [roomName, setRoomName] = useState('')
@@ -140,19 +141,37 @@ const CreateRoom: React.FC<CreateRoomProps> = ({ onBack, onJoinRoom }) => {
     }
   }
 
-  const handleStartGame = () => {
-    setCurrentStep('game-select')
+  const handleGameSelectedForSetup = async (game: Game) => {
+    // Cargar el juego completo con preguntas
+    try {
+      setLoading(true)
+      const { data: fullGameData, error: gameError } = await gameHelpers.getGameWithQuestions(game.id)
+      
+      if (gameError || !fullGameData) {
+        setError('Error al cargar el juego completo')
+        console.error('Game loading error:', gameError)
+        return
+      }
+      
+      setSelectedGame(fullGameData)
+      setCurrentStep('setup')
+    } catch (err) {
+      setError('Error al cargar el juego')
+      console.error('Error:', err)
+    } finally {
+      setLoading(false)
+    }
   }
 
-  const handleGameSelected = async (selectedGame: Game) => {
-    if (!room || !players.length) return
+  const handleStartGame = async () => {
+    if (!room || !players.length || !selectedGame) return
 
     try {
       setLoading(true)
       setError(null)
       
       // Crear sesión de juego
-      const { data: sessionData, error: sessionError } = await roomHelpers.createGameSession(
+      const { error: sessionError } = await roomHelpers.createGameSession(
         room.id, 
         selectedGame.id
       )
@@ -178,8 +197,7 @@ const CreateRoom: React.FC<CreateRoomProps> = ({ onBack, onJoinRoom }) => {
         const updatedRoom = { 
           ...room, 
           status: 'playing' as const, 
-          game: selectedGame,
-          session: sessionData
+          game: selectedGame
         }
         onJoinRoom(updatedRoom, hostPlayer)
       }
@@ -191,14 +209,15 @@ const CreateRoom: React.FC<CreateRoomProps> = ({ onBack, onJoinRoom }) => {
     }
   }
 
-  // Renderizar selector de juegos
+
+  // Renderizar selector de juegos (paso inicial)
   if (currentStep === 'game-select') {
     return (
       <GameSelector
         games={games}
-        onSelectGame={handleGameSelected}
-        onBack={() => setCurrentStep('waiting')}
-        title="Selecciona un Juego para la Sala"
+        onSelectGame={handleGameSelectedForSetup}
+        onBack={onBack}
+        title="Selecciona un Juego para tu Sala"
       />
     )
   }
@@ -240,9 +259,26 @@ const CreateRoom: React.FC<CreateRoomProps> = ({ onBack, onJoinRoom }) => {
                 <h2 className="text-2xl font-bold text-gray-800 mb-2">
                   Configurar tu Sala
                 </h2>
-                <p className="text-gray-600">
+                <p className="text-gray-600 mb-4">
                   Personaliza los detalles de tu sala multijugador
                 </p>
+                
+                {/* Juego seleccionado */}
+                {selectedGame && (
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                    <div className="flex items-center justify-center gap-3">
+                      <div className="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center">
+                        <Play className="w-6 h-6 text-white" />
+                      </div>
+                      <div className="text-left">
+                        <h3 className="font-bold text-green-800">{selectedGame.title}</h3>
+                        <p className="text-sm text-green-600">
+                          {selectedGame.questions?.length || 0} preguntas
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="space-y-6">

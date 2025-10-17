@@ -162,14 +162,26 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
         return
       }
       
-      setCurrentGame(selectedGame)
+      // Cargar el juego completo con sus preguntas
+      const { data: fullGameData, error: gameError } = await gameHelpers.getGameWithQuestions(selectedGame.id)
+      
+      if (gameError || !fullGameData) {
+        setError('Error al cargar las preguntas del juego')
+        console.error('Game loading error:', gameError)
+        return
+      }
+      
+      console.log('✅ Full game data loaded:', fullGameData)
+      console.log('✅ Questions count:', fullGameData.questions?.length || 0)
+      
+      setCurrentGame(fullGameData)
       setRoom(prev => ({ ...prev, status: 'playing' }))
       
       // Iniciar el juego directamente
       setRoomState('playing')
       setGameState('question')
       setCurrentQuestionIndex(0)
-      setTimeLeft(selectedGame.questions?.[0]?.time_limit || 30)
+      setTimeLeft(fullGameData.questions?.[0]?.time_limit || 30)
       playGameStart()
     } catch (err) {
       setError('Error al iniciar el juego')
