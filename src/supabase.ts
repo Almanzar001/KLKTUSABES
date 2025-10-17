@@ -842,7 +842,7 @@ const formatRelativeTime = (dateString: string) => {
 // Funciones para salas multijugador
 export const roomHelpers = {
   // Crear una nueva sala
-  createRoom: async (name: string, code: string, userId: string) => {
+  createRoom: async (name: string, code: string, userId: string, maxPlayers: number = 20) => {
     const { data, error } = await supabase
       .from('rooms')
       .insert([
@@ -850,7 +850,8 @@ export const roomHelpers = {
           name,
           code,
           created_by_user: userId,
-          status: 'waiting'
+          status: 'waiting',
+          max_players: maxPlayers
         }
       ])
       .select()
@@ -919,6 +920,35 @@ export const roomHelpers = {
       .update({ score })
       .eq('id', playerId)
       .select()
+      .single()
+    return { data, error }
+  },
+
+  // Crear sesión de juego para una sala
+  createGameSession: async (roomId: string, gameId: string) => {
+    const { data, error } = await supabase
+      .from('game_sessions')
+      .insert([
+        {
+          room_id: roomId,
+          game_id: gameId,
+          current_question: 0
+        }
+      ])
+      .select()
+      .single()
+    return { data, error }
+  },
+
+  // Obtener sesión de juego activa de una sala
+  getRoomGameSession: async (roomId: string) => {
+    const { data, error } = await supabase
+      .from('game_sessions')
+      .select(`
+        *,
+        games (*)
+      `)
+      .eq('room_id', roomId)
       .single()
     return { data, error }
   }

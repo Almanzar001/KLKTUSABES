@@ -93,7 +93,8 @@ const CreateRoom: React.FC<CreateRoomProps> = ({ onBack, onJoinRoom }) => {
       const { data: roomData, error: roomError } = await roomHelpers.createRoom(
         roomName.trim(),
         roomCode,
-        user.id
+        user.id,
+        maxPlayers
       )
 
       if (roomError) {
@@ -148,14 +149,38 @@ const CreateRoom: React.FC<CreateRoomProps> = ({ onBack, onJoinRoom }) => {
 
     try {
       setLoading(true)
+      setError(null)
+      
+      // Crear sesión de juego
+      const { data: sessionData, error: sessionError } = await roomHelpers.createGameSession(
+        room.id, 
+        selectedGame.id
+      )
+      
+      if (sessionError) {
+        setError('Error al crear la sesión de juego')
+        console.error('Session error:', sessionError)
+        return
+      }
       
       // Actualizar estado de la sala a 'playing'
-      await roomHelpers.updateRoomStatus(room.id, 'playing')
+      const { error: roomError } = await roomHelpers.updateRoomStatus(room.id, 'playing')
+      
+      if (roomError) {
+        setError('Error al iniciar el juego')
+        console.error('Room error:', roomError)
+        return
+      }
       
       // Navegar a la sala de juego
       const hostPlayer = players.find(p => p.is_host)
       if (hostPlayer) {
-        const updatedRoom = { ...room, status: 'playing' as const, game: selectedGame }
+        const updatedRoom = { 
+          ...room, 
+          status: 'playing' as const, 
+          game: selectedGame,
+          session: sessionData
+        }
         onJoinRoom(updatedRoom, hostPlayer)
       }
     } catch (err) {

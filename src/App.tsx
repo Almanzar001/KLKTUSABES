@@ -7,6 +7,7 @@ import JoinRoom from './components/JoinRoom'
 import SinglePlayerGame from './components/SinglePlayerGame'
 import QRGameAccess from './components/QRGameAccess'
 import AdminPanel from './components/AdminPanel'
+import MultiplayerRoom from './components/MultiplayerRoom'
 import { Room, Player } from './types'
 import './index.css'
 
@@ -91,21 +92,15 @@ const AppContent: React.FC = () => {
         )
 
       case 'game-room':
+        if (!currentRoom || !currentPlayer) {
+          return <WelcomeScreen onNavigate={handleNavigate} />
+        }
         return (
-          <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-            <div className="text-center">
-              <h2 className="text-2xl font-bold text-gray-800 mb-4">Sala de Juego</h2>
-              <p className="text-gray-600 mb-6">
-                {currentRoom?.name} - Código: {currentRoom?.code}
-              </p>
-              <p className="text-gray-600 mb-6">
-                Jugador: {currentPlayer?.name} {currentPlayer?.avatar}
-              </p>
-              <button onClick={handleBackToWelcome} className="btn-dominican-primary">
-                Salir de la Sala
-              </button>
-            </div>
-          </div>
+          <MultiplayerRoom
+            room={currentRoom}
+            player={currentPlayer}
+            onBack={handleBackToWelcome}
+          />
         )
       
       default:

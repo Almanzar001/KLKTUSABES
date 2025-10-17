@@ -40,12 +40,19 @@ const JoinRoom: React.FC<JoinRoomProps> = ({ onBack, onJoinRoom }) => {
       const { data: roomData, error: roomError } = await roomHelpers.findRoomByCode(roomCode.trim())
 
       if (roomError) {
-        if (roomError.code === 'PGRST116') {
+        if (roomError.code === 'PGRST116' || roomError.message?.includes('No rows found')) {
           setError('No se encontró ninguna sala con ese código')
+        } else if (roomError.message?.includes('duplicate') || roomError.code === '23505') {
+          setError('Ya estás en esta sala')
         } else {
-          setError('Error al buscar la sala')
+          setError('Error al buscar la sala: ' + (roomError.message || 'Error desconocido'))
         }
         console.error('Room error:', roomError)
+        return
+      }
+
+      if (!roomData) {
+        setError('No se encontró ninguna sala con ese código')
         return
       }
 
