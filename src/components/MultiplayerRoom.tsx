@@ -23,15 +23,17 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
   const [room, setRoom] = useState<Room>(initialRoom)
   const [players, setPlayers] = useState<Player[]>([])
   const [roomState, setRoomState] = useState<RoomState>(
-    initialRoom.status === 'playing' && initialRoom.game ? 'playing' : 'lobby'
+    initialRoom.status === 'playing' && (initialRoom.current_game_data || initialRoom.game) ? 'playing' : 'lobby'
   )
   const [gameState, setGameState] = useState<GameState>(
-    initialRoom.status === 'playing' && initialRoom.game ? 'question' : 'waiting'
+    initialRoom.status === 'playing' && (initialRoom.current_game_data || initialRoom.game) ? 'question' : 'waiting'
   )
   const [games, setGames] = useState<Game[]>([])
   
   // Estados del juego
-  const [currentGame, setCurrentGame] = useState<Game | null>(initialRoom.game || null)
+  const [currentGame, setCurrentGame] = useState<Game | null>(
+    initialRoom.current_game_data || initialRoom.game || null
+  )
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0)
   const [timeLeft, setTimeLeft] = useState(30)
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null)
@@ -78,19 +80,30 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
         console.log('🎮 Current player:', player.name, 'Is host:', player.is_host)
         
         if (payload.new?.status !== room.status) {
-          setRoom(prev => ({ ...prev, status: payload.new.status }))
+          console.log('📦 Room update payload:', payload.new)
+          setRoom(prev => ({ ...prev, ...payload.new }))
           
           if (payload.new.status === 'playing') {
             console.log('🚀 Starting game for:', player.name)
             
-            if (player.is_host) {
-              // El host ya tiene el juego, no necesita cargarlo de nuevo
-              console.log('🏠 Host already has game, skipping load')
+            // Si hay current_game_data, usarlo para todos
+            if (payload.new.current_game_data) {
+              console.log('✅ Game data received from room update:', payload.new.current_game_data.title)
+              console.log('✅ Questions count:', payload.new.current_game_data.questions?.length || 0)
+              
+              setCurrentGame(payload.new.current_game_data)
               setRoomState('playing')
               setGameState('question')
+              setTimeLeft(payload.new.current_game_data.questions?.[0]?.time_limit || 30)
             } else {
-              // Los participantes necesitan cargar el juego
-              handleGameStart()
+              // Fallback al método anterior
+              if (player.is_host) {
+                console.log('🏠 Host already has game, skipping load')
+                setRoomState('playing')
+                setGameState('question')
+              } else {
+                handleGameStart()
+              }
             }
           }
         }

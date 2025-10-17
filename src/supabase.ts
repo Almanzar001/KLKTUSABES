@@ -1019,6 +1019,29 @@ export const roomHelpers = {
     return { data, error }
   },
 
+  // Actualizar sala con estado y juego
+  updateRoomWithGame: async (roomId: string, status: string, game: any) => {
+    console.log('🎯 Updating room with game:', { roomId, status, gameTitle: game?.title, gameQuestions: game?.questions?.length })
+    
+    const { data, error } = await supabase
+      .from('rooms')
+      .update({ 
+        status,
+        current_game_data: game // Almacenar el juego completo
+      })
+      .eq('id', roomId)
+      .select()
+      .single()
+    
+    if (error) {
+      console.error('❌ Error updating room with game:', error)
+    } else {
+      console.log('✅ Room updated with game successfully')
+    }
+    
+    return { data, error }
+  },
+
   // Actualizar puntuación de jugador
   updatePlayerScore: async (playerId: string, score: number) => {
     const { data, error } = await supabase

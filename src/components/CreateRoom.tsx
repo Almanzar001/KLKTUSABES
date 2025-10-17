@@ -182,8 +182,8 @@ const CreateRoom: React.FC<CreateRoomProps> = ({ onBack, onJoinRoom }) => {
         return
       }
       
-      // Actualizar estado de la sala a 'playing'
-      const { error: roomError } = await roomHelpers.updateRoomStatus(room.id, 'playing')
+      // Actualizar estado de la sala a 'playing' Y guardar el juego
+      const { error: roomError } = await roomHelpers.updateRoomWithGame(room.id, 'playing', selectedGame)
       
       if (roomError) {
         setError('Error al iniciar el juego')

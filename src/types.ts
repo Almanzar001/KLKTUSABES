@@ -42,6 +42,7 @@ export interface Room {
   created_by_user?: string
   game?: Game
   players?: Player[]
+  current_game_data?: Game // Juego completo almacenado en la sala
 }
 
 export interface Player {
