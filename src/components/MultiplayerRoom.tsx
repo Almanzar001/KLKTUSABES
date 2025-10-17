@@ -120,31 +120,42 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
           console.log(`🎮 New game session detected for ${player.name}`)
           
           if (!player.is_host) {
-            // Los participantes reciben el juego directamente del game_session
-            if (payload.new.game_data) {
-              console.log('✅ Game data received for participant:', payload.new.game_data.title, 'Questions:', payload.new.game_data.questions?.length)
-              setCurrentGame(payload.new.game_data)
-              setRoomState('playing')
-              setGameState('question')
-              setTimeLeft(payload.new.game_data.questions?.[0]?.time_limit || 30)
-            } else {
-              // Fallback al método anterior si no hay game_data
+            // Los participantes intentan cargar desde localStorage primero
+            try {
+              const storedGameData = localStorage.getItem(`game-data-${room.id}`)
+              if (storedGameData) {
+                const gameData = JSON.parse(storedGameData)
+                console.log('✅ Game loaded from localStorage for participant:', gameData.title, 'Questions:', gameData.questions?.length)
+                setCurrentGame(gameData)
+                setRoomState('playing')
+                setGameState('question')
+                setTimeLeft(gameData.questions?.[0]?.time_limit || 30)
+                return
+              }
+            } catch (err) {
+              console.log('⚠️ No game data in localStorage for participant')
+            }
+            
+            // Fallback: usar datos básicos y esperar que funcione
+            console.log('⚠️ Participant will use basic game data, may not have questions')
+            setRoomState('playing')
+            setGameState('question')
+            setError('Conectando al juego...')
+            
+            // Intentar obtener el juego de la sesión existente
+            setTimeout(async () => {
               try {
-                const { data: gameData, error: gameError } = await gameHelpers.getGameWithQuestions(payload.new.game_id)
-                
-                if (!gameError && gameData) {
-                  console.log('✅ Game loaded for participant (fallback):', gameData.title, 'Questions:', gameData.questions?.length)
-                  setCurrentGame(gameData)
-                  setRoomState('playing')
-                  setGameState('question')
-                  setTimeLeft(gameData.questions?.[0]?.time_limit || 30)
-                } else {
-                  console.error('❌ Error loading game for participant:', gameError)
+                const { data: sessionData, error: sessionError } = await roomHelpers.getRoomGameSession(room.id)
+                if (!sessionError && sessionData?.games) {
+                  console.log('✅ Game loaded from session for participant:', sessionData.games.title)
+                  setCurrentGame(sessionData.games)
+                  setError(null)
+                  setTimeLeft(sessionData.games.questions?.[0]?.time_limit || 30)
                 }
               } catch (err) {
-                console.error('❌ Exception loading game for participant:', err)
+                console.error('❌ Final fallback failed:', err)
               }
-            }
+            }, 1000)
           }
         }
       }

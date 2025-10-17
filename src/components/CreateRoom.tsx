@@ -170,11 +170,13 @@ const CreateRoom: React.FC<CreateRoomProps> = ({ onBack, onJoinRoom }) => {
       setLoading(true)
       setError(null)
       
-      // Crear sesión de juego CON EL JUEGO COMPLETO
-      const { error: sessionError } = await roomHelpers.createGameSessionWithFullGame(
+      // Almacenar el juego en localStorage como fallback
+      localStorage.setItem(`game-data-${room.id}`, JSON.stringify(selectedGame))
+      
+      // Crear sesión de juego (método original)
+      const { error: sessionError } = await roomHelpers.createGameSession(
         room.id, 
-        selectedGame.id,
-        selectedGame // Pasar el juego completo
+        selectedGame.id
       )
       
       if (sessionError) {
