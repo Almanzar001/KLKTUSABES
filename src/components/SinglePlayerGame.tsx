@@ -292,9 +292,12 @@ const SinglePlayerGame: React.FC<SinglePlayerGameProps> = ({
 
   const handleGameSelect = (game: Game) => {
     setSelectedGame(game)
-    // Crear preguntas con opciones mezcladas
+    // Crear preguntas mezcladas con opciones mezcladas
     if (game.questions) {
-      const shuffled = game.questions.map(question => shuffleQuestionOptions(question))
+      // Primero mezclar el orden de las preguntas
+      const shuffledGameQuestions = shuffleArray(game.questions)
+      // Luego mezclar las opciones de cada pregunta
+      const shuffled = shuffledGameQuestions.map(question => shuffleQuestionOptions(question))
       setShuffledQuestions(shuffled)
     }
     setGameState('playing')
@@ -310,14 +313,22 @@ const SinglePlayerGame: React.FC<SinglePlayerGameProps> = ({
     
     // Si no hay preguntas mezcladas y tenemos un juego seleccionado, crear las preguntas mezcladas
     if (selectedGame?.questions && shuffledQuestions.length === 0) {
-      const shuffled = selectedGame.questions.map(question => shuffleQuestionOptions(question))
+      // Primero mezclar el orden de las preguntas
+      const shuffledGameQuestions = shuffleArray(selectedGame.questions)
+      // Luego mezclar las opciones de cada pregunta
+      const shuffled = shuffledGameQuestions.map(question => shuffleQuestionOptions(question))
       setShuffledQuestions(shuffled)
     }
     
     // Reproducir sonido de inicio de juego
     playGameStart()
     
-    if (selectedGame?.questions && selectedGame.questions[0]) {
+    // Usar las preguntas mezcladas para establecer el tiempo
+    if (shuffledQuestions.length > 0 && shuffledQuestions[0]) {
+      setTimeLeft(shuffledQuestions[0].time_limit)
+      setQuestionStartTime(Date.now())
+    } else if (selectedGame?.questions && selectedGame.questions[0]) {
+      // Fallback en caso de que shuffledQuestions aún no esté listo
       setTimeLeft(selectedGame.questions[0].time_limit)
       setQuestionStartTime(Date.now())
     }
@@ -326,9 +337,8 @@ const SinglePlayerGame: React.FC<SinglePlayerGameProps> = ({
   const handleAnswerSelect = (answerIndex: number) => {
     if (showAnswer || selectedAnswer !== null) return
     
-    const currentQuestion = selectedGame?.questions?.[currentQuestionIndex]
     const currentShuffledQuestion = shuffledQuestions[currentQuestionIndex]
-    if (!currentQuestion || !currentShuffledQuestion) return
+    if (!currentShuffledQuestion) return
 
     const timeToAnswer = Date.now() - questionStartTime
     const isCorrect = answerIndex === currentShuffledQuestion.correctAnswerIndex
@@ -387,7 +397,7 @@ const SinglePlayerGame: React.FC<SinglePlayerGameProps> = ({
   const handleNextQuestion = () => {
     const nextIndex = currentQuestionIndex + 1
     
-    if (!selectedGame?.questions || nextIndex >= selectedGame.questions.length) {
+    if (!shuffledQuestions || nextIndex >= shuffledQuestions.length) {
       // Juego terminado - reproducir sonido de fin de juego
       playGameEnd()
       
@@ -399,14 +409,17 @@ const SinglePlayerGame: React.FC<SinglePlayerGameProps> = ({
     setCurrentQuestionIndex(nextIndex)
     setSelectedAnswer(null)
     setShowAnswer(false)
-    setTimeLeft(selectedGame.questions[nextIndex].time_limit)
+    setTimeLeft(shuffledQuestions[nextIndex].time_limit)
     setQuestionStartTime(Date.now())
   }
 
   const handlePlayAgain = () => {
-    // Re-mezclar las preguntas para el nuevo juego
+    // Re-mezclar las preguntas y opciones para el nuevo juego
     if (selectedGame?.questions) {
-      const shuffled = selectedGame.questions.map(question => shuffleQuestionOptions(question))
+      // Primero mezclar el orden de las preguntas
+      const shuffledGameQuestions = shuffleArray(selectedGame.questions)
+      // Luego mezclar las opciones de cada pregunta
+      const shuffled = shuffledGameQuestions.map(question => shuffleQuestionOptions(question))
       setShuffledQuestions(shuffled)
     }
     setGameState('playing')
@@ -496,7 +509,10 @@ const SinglePlayerGame: React.FC<SinglePlayerGameProps> = ({
               onClick={() => {
                 // Crear preguntas mezcladas para sesión QR
                 if (selectedGame?.questions) {
-                  const shuffled = selectedGame.questions.map(question => shuffleQuestionOptions(question))
+                  // Primero mezclar el orden de las preguntas
+                  const shuffledGameQuestions = shuffleArray(selectedGame.questions)
+                  // Luego mezclar las opciones de cada pregunta
+                  const shuffled = shuffledGameQuestions.map(question => shuffleQuestionOptions(question))
                   setShuffledQuestions(shuffled)
                 }
                 setGameState('playing')
@@ -515,9 +531,8 @@ const SinglePlayerGame: React.FC<SinglePlayerGameProps> = ({
 
   // Pantalla de juego
   if (gameState === 'playing' && selectedGame?.questions && shuffledQuestions.length > 0) {
-    const currentQuestion = selectedGame.questions[currentQuestionIndex]
     const currentShuffledQuestion = shuffledQuestions[currentQuestionIndex]
-    const progress = ((currentQuestionIndex + 1) / selectedGame.questions.length) * 100
+    const progress = ((currentQuestionIndex + 1) / shuffledQuestions.length) * 100
 
     return (
       <div className="min-h-screen bg-gray-50">
@@ -583,7 +598,7 @@ const SinglePlayerGame: React.FC<SinglePlayerGameProps> = ({
                           : '#10b981'
                       }
                       strokeWidth="6"
-                      strokeDasharray={`${(timeLeft / currentQuestion.time_limit) * 175.929} 175.929`}
+                      strokeDasharray={`${(timeLeft / currentShuffledQuestion.time_limit) * 175.929} 175.929`}
                       strokeLinecap="round"
                       className="transition-all duration-1000 ease-linear"
                     />
@@ -601,7 +616,7 @@ const SinglePlayerGame: React.FC<SinglePlayerGameProps> = ({
                           : '#6ee7b7'
                       }
                       strokeWidth="2"
-                      strokeDasharray={`${(timeLeft / currentQuestion.time_limit) * 175.929} 175.929`}
+                      strokeDasharray={`${(timeLeft / currentShuffledQuestion.time_limit) * 175.929} 175.929`}
                       strokeLinecap="round"
                       className="transition-all duration-1000 ease-linear"
                       opacity="0.6"
@@ -630,7 +645,7 @@ const SinglePlayerGame: React.FC<SinglePlayerGameProps> = ({
                 
                 <div className="text-sm text-gray-600">
                   <div className="font-semibold">
-                    Pregunta {currentQuestionIndex + 1} de {selectedGame.questions.length}
+                    Pregunta {currentQuestionIndex + 1} de {shuffledQuestions.length}
                   </div>
                   <div className="text-xs text-gray-500">
                     {answers.reduce((total, answer) => total + answer.pointsEarned, 0)} puntos
@@ -652,10 +667,10 @@ const SinglePlayerGame: React.FC<SinglePlayerGameProps> = ({
         {/* Pregunta */}
         <div className="max-w-4xl mx-auto px-6 py-8">
           <div className="question-card">
-            {currentQuestion.image_url && (
+            {currentShuffledQuestion.image_url && (
               <div className="mb-6">
                 <img
-                  src={currentQuestion.image_url}
+                  src={currentShuffledQuestion.image_url}
                   alt="Imagen de la pregunta"
                   className="max-w-full h-64 object-cover rounded-lg mx-auto"
                 />
@@ -663,7 +678,7 @@ const SinglePlayerGame: React.FC<SinglePlayerGameProps> = ({
             )}
             
             <h2 className="text-2xl font-bold text-gray-800 mb-8 text-center">
-              {currentQuestion.text}
+              {currentShuffledQuestion.text}
             </h2>
             
             <div className="grid md:grid-cols-2 gap-4">
@@ -719,7 +734,7 @@ const SinglePlayerGame: React.FC<SinglePlayerGameProps> = ({
                 </div>
                 
                 <div className="text-sm text-gray-500">
-                  {currentQuestionIndex + 1 < selectedGame.questions.length 
+                  {currentQuestionIndex + 1 < shuffledQuestions.length 
                     ? 'Siguiente pregunta en unos segundos...' 
                     : 'Calculando resultados...'}
                 </div>
@@ -821,7 +836,7 @@ const SinglePlayerGame: React.FC<SinglePlayerGameProps> = ({
               <h3 className="text-xl font-bold text-gray-800 mb-4">Revisión de Respuestas</h3>
               <div className="space-y-3">
                 {answers.map((answer, index) => {
-                  const question = selectedGame.questions![answer.questionIndex]
+                  const question = shuffledQuestions[answer.questionIndex]
                   return (
                     <div key={index} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
                       <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
@@ -832,7 +847,7 @@ const SinglePlayerGame: React.FC<SinglePlayerGameProps> = ({
                       
                       <div className="flex-1">
                         <p className="font-semibold text-gray-800 text-sm">
-                          {question.text}
+                          {question?.text}
                         </p>
                         <p className="text-xs text-gray-600">
                           {answer.selectedAnswer === -1 
