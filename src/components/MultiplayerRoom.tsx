@@ -40,6 +40,7 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
   const [showAnswer, setShowAnswer] = useState(false)
   const [playerAnswers, setPlayerAnswers] = useState<{[playerId: string]: number | null}>({})
   const [waitingForPlayers, setWaitingForPlayers] = useState(false)
+  const [lastSyncTimestamp, setLastSyncTimestamp] = useState(0)
   
   // Estados de la UI
   const [loading, setLoading] = useState(false)
@@ -169,8 +170,19 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
           gameState: newGameState, 
           timeLeft: newTimeLeft, 
           showAnswer: newShowAnswer,
-          gameEnded 
+          gameEnded,
+          timestamp 
         } = event.data
+        
+        // Ignorar mensajes duplicados o antiguos
+        if (timestamp && timestamp <= lastSyncTimestamp) {
+          console.log('📝 Ignoring duplicate/old sync message')
+          return
+        }
+        
+        if (timestamp) {
+          setLastSyncTimestamp(timestamp)
+        }
         
         // Manejar fin del juego
         if (gameEnded) {
@@ -515,22 +527,31 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
       setShowAnswer(true)
       setWaitingForPlayers(false)
       
-      // SINCRONIZAR mostrar respuesta si soy el host
+      // SINCRONIZAR mostrar respuesta si soy el host (múltiples intentos)
       if (player.is_host) {
         console.log('📊 HOST broadcasting show answer state')
-        const gameChannel = new BroadcastChannel(`game-${room.id}`)
-        gameChannel.postMessage({
+        
+        const broadcastMessage = {
           type: 'GAME_STATE_SYNC',
           questionIndex: currentQuestionIndex,
           gameState: 'question',
           timeLeft: timeLeft,
-          showAnswer: true
-        })
+          showAnswer: true,
+          timestamp: Date.now()
+        }
         
-        setTimeout(() => gameChannel.close(), 1000)
+        // Enviar múltiples veces para asegurar llegada
+        for (let i = 0; i < 3; i++) {
+          setTimeout(() => {
+            const gameChannel = new BroadcastChannel(`game-${room.id}`)
+            gameChannel.postMessage(broadcastMessage)
+            setTimeout(() => gameChannel.close(), 100)
+          }, i * 200)
+        }
+        
+        // NO avanzar automáticamente - esperar que el host presione el botón
+        console.log('✅ All players answered, waiting for host to advance')
       }
-      
-      // NO avanzar automáticamente - esperar que el host presione el botón
     } else {
       // Esperar a que otros respondan
       setWaitingForPlayers(true)
@@ -552,24 +573,33 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
       }))
     }
     
-    // SINCRONIZAR tiempo agotado si soy el host
+    // SINCRONIZAR tiempo agotado si soy el host (múltiples intentos)
     if (player.is_host) {
       console.log('⏰ HOST broadcasting time up state')
-      const gameChannel = new BroadcastChannel(`game-${room.id}`)
-      gameChannel.postMessage({
+      
+      const broadcastMessage = {
         type: 'GAME_STATE_SYNC',
         questionIndex: currentQuestionIndex,
         gameState: 'question',
         timeLeft: 0,
-        showAnswer: true
-      })
+        showAnswer: true,
+        timestamp: Date.now()
+      }
       
-      setTimeout(() => gameChannel.close(), 1000)
+      // Enviar múltiples veces para asegurar llegada
+      for (let i = 0; i < 3; i++) {
+        setTimeout(() => {
+          const gameChannel = new BroadcastChannel(`game-${room.id}`)
+          gameChannel.postMessage(broadcastMessage)
+          setTimeout(() => gameChannel.close(), 100)
+        }, i * 200)
+      }
+      
+      // NO avanzar automáticamente - esperar que el host presione el botón
+      console.log('⏰ Time up, waiting for host to advance')
     }
     
     // TODO: Registrar respuesta por tiempo agotado
-    
-    // NO avanzar automáticamente - mostrar botón para el host
   }
 
   const handleNextQuestion = () => {
@@ -589,39 +619,54 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
       setTimeLeft(newTimeLimit)
       setGameState('question')
       
-      // SINCRONIZAR con todos los participantes si soy el host
+      // SINCRONIZAR con todos los participantes si soy el host (múltiples intentos para garantizar llegada)
       if (player.is_host) {
         console.log(`🎯 HOST broadcasting next question: ${nextIndex + 1}`)
-        const gameChannel = new BroadcastChannel(`game-${room.id}`)
-        gameChannel.postMessage({
+        
+        const broadcastMessage = {
           type: 'GAME_STATE_SYNC',
           questionIndex: nextIndex,
           gameState: 'question',
           timeLeft: newTimeLimit,
-          showAnswer: false
-        })
+          showAnswer: false,
+          timestamp: Date.now()
+        }
         
-        // Cerrar canal después de un momento
-        setTimeout(() => gameChannel.close(), 1000)
+        // Enviar el mensaje múltiples veces para asegurar llegada
+        for (let i = 0; i < 3; i++) {
+          setTimeout(() => {
+            const gameChannel = new BroadcastChannel(`game-${room.id}`)
+            gameChannel.postMessage(broadcastMessage)
+            setTimeout(() => gameChannel.close(), 100)
+          }, i * 200)
+        }
       }
     } else {
       setRoomState('results')
       setGameState('leaderboard')
       
-      // SINCRONIZAR fin del juego si soy el host
+      // SINCRONIZAR fin del juego si soy el host (múltiples intentos)
       if (player.is_host) {
         console.log('🏁 HOST broadcasting game end')
-        const gameChannel = new BroadcastChannel(`game-${room.id}`)
-        gameChannel.postMessage({
+        
+        const broadcastMessage = {
           type: 'GAME_STATE_SYNC',
           questionIndex: nextIndex,
           gameState: 'leaderboard',
           timeLeft: 0,
           showAnswer: false,
-          gameEnded: true
-        })
+          gameEnded: true,
+          timestamp: Date.now()
+        }
         
-        setTimeout(() => gameChannel.close(), 1000)
+        // Enviar múltiples veces para asegurar llegada
+        for (let i = 0; i < 3; i++) {
+          setTimeout(() => {
+            const gameChannel = new BroadcastChannel(`game-${room.id}`)
+            gameChannel.postMessage(broadcastMessage)
+            setTimeout(() => gameChannel.close(), 100)
+          }, i * 200)
+        }
       }
     }
   }
