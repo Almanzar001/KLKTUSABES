@@ -1372,22 +1372,27 @@ export const realtimeHelpers = {
 
 // Funciones para resultados de sesiones QR
 export const qrResultsHelpers = {
-  // Guardar resultado de jugador en sesión QR
+  // Guardar resultado de jugador en sesión QR (con UPSERT para evitar duplicados)
   saveQRSessionResult: async (qrSessionId: string, playerName: string, totalScore: number, totalCorrect: number, totalQuestions: number, avgTime: number, gameData: any) => {
+    // Usar upsert para actualizar si ya existe o insertar si no
     const { data, error } = await supabase
       .from('qr_session_results')
-      .insert([
+      .upsert(
         {
           qr_session_id: qrSessionId,
-          player_name: playerName,
+          player_name: playerName.trim(), // Normalizar nombre
           total_score: totalScore,
           total_correct: totalCorrect,
           total_questions: totalQuestions,
           avg_time: avgTime,
           game_data: gameData,
           completed_at: new Date().toISOString()
+        },
+        {
+          onConflict: 'qr_session_id,player_name', // Especificar qué campos usar para detectar conflictos
+          ignoreDuplicates: false // Actualizar en caso de conflicto
         }
-      ])
+      )
       .select()
       .single()
     return { data, error }

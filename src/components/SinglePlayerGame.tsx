@@ -123,19 +123,9 @@ const SinglePlayerGame: React.FC<SinglePlayerGameProps> = ({
         return
       }
 
-      // Verificar si el jugador ya participó (doble verificación)
-      const { data: existingResults, error: checkError } = await qrResultsHelpers.checkPlayerPlayed(
-        qrSessionId,
-        normalizedName
-      )
-
-      if (checkError) {
-        console.error('Error checking existing results:', checkError)
-        // Continuar con precaución
-      } else if (existingResults && existingResults.length > 0) {
-        alert(`El nombre "${normalizedName}" ya participó en esta sesión.`)
-        return
-      }
+      // Nota: Ya no verificamos si el jugador participó previamente
+      // porque usamos UPSERT que actualiza automáticamente si ya existe
+      
       const results = calculateResults()
       const avgTime = answers.length > 0 
         ? answers.reduce((sum, a) => sum + a.timeToAnswer, 0) / answers.length / 1000 
@@ -173,6 +163,9 @@ const SinglePlayerGame: React.FC<SinglePlayerGameProps> = ({
         // Verificar si es un error de tabla no encontrada
         if (error.code === '42P01') {
           alert('Error: La tabla de resultados no existe. Por favor ejecuta la migración de base de datos antes de jugar.')
+        } else if (error.code === '23505' || error.message?.includes('unique_player_per_session')) {
+          // Error de clave duplicada - el jugador ya participó
+          alert(`Ya existe un resultado guardado para "${normalizedName}" en esta sesión. Tu nuevo resultado ha sido actualizado.`)
         } else {
           alert(`Error al guardar resultados: ${error.message}. Puedes continuar viendo tus puntos.`)
         }
