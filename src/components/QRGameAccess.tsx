@@ -65,8 +65,18 @@ const QRGameAccess: React.FC<QRGameAccessProps> = ({ onBack }) => {
         return
       }
 
+      console.log('QR Session data:', data)
+      console.log('Game from session:', data.games || data.game)
+      
       setQRSession(data)
-      setCurrentGame(data.game)
+      // La respuesta de Supabase viene con 'games' (plural), no 'game'
+      const gameData = data.games || data.game
+      setCurrentGame(gameData)
+      
+      if (!gameData) {
+        setError('No se pudo cargar el juego asociado a esta sesión')
+        return
+      }
     } catch (err) {
       setError('Error inesperado al acceder a la sesión')
       console.error('Error:', err)
@@ -76,6 +86,11 @@ const QRGameAccess: React.FC<QRGameAccessProps> = ({ onBack }) => {
   }
 
   const handleStartGame = () => {
+    console.log('Starting game with data:', currentGame)
+    if (!currentGame) {
+      setError('No hay juego disponible para esta sesión')
+      return
+    }
     setGameStarted(true)
   }
 

@@ -81,10 +81,13 @@ export interface QRGameSession {
   game_id: string
   title: string
   description?: string
+  max_participants?: number
+  expires_at?: string
   is_active: boolean
   created_at: string
   created_by_user?: string
   game?: Game
+  games?: Game // Supabase devuelve como 'games' en las relaciones
 }
 
 // Tipos para el estado de la aplicación
