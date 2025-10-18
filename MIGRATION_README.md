@@ -24,7 +24,12 @@ Ve a tu **Supabase SQL Editor** y ejecuta:
 ### PASO 2: Aplicar Migración Completa
 En el **Supabase SQL Editor**, ejecuta:
 ```sql
--- Copiar y pegar TODO el contenido de add_qr_session_fields.sql
+-- Copiar y pegar TODO el contenido de fix_qr_migration_safe.sql
+```
+
+**⚠️ IMPORTANTE:** Usa `fix_qr_migration_safe.sql` si tienes el error:
+```
+ERROR: 42P01: relation "qr_session_results" does not exist
 ```
 
 ## 📋 Lo que hace la migración:
