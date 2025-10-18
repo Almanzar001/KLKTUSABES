@@ -39,6 +39,8 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null)
   const [showAnswer, setShowAnswer] = useState(false)
   const [playerAnswers, setPlayerAnswers] = useState<{[playerId: string]: number | null}>({})
+  const [playerAnswerTimes, setPlayerAnswerTimes] = useState<{[playerId: string]: number}>({}) // Tiempo que tardó en responder
+  const [questionStartTime, setQuestionStartTime] = useState<number>(0) // Timestamp de inicio de pregunta
   const [waitingForPlayers, setWaitingForPlayers] = useState(false)
   const [lastSyncTimestamp, setLastSyncTimestamp] = useState(0)
   const [hasTimedOut, setHasTimedOut] = useState(false)
@@ -236,7 +238,9 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
         if (questionIndex !== currentQuestionIndex) {
           setSelectedAnswer(null) // Resetear respuesta del participante
           setPlayerAnswers({}) // Limpiar respuestas anteriores
+          setPlayerAnswerTimes({}) // Limpiar tiempos de respuesta
           setHasTimedOut(false) // Resetear estado de timeout
+          setQuestionStartTime(Date.now()) // Reiniciar tiempo de pregunta
         }
         
         setWaitingForPlayers(false)
@@ -330,7 +334,9 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
         if (questionIndex !== currentQuestionIndex) {
           setSelectedAnswer(null)
           setPlayerAnswers({})
+          setPlayerAnswerTimes({})
           setHasTimedOut(false)
+          setQuestionStartTime(Date.now())
         }
         
         setWaitingForPlayers(false)
@@ -355,13 +361,20 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
         return
       }
       
-      console.log(`📝 [${player.name}] Recording answer from ${data.player_name}: ${data.answer_index}`)
+      console.log(`📝 [${player.name}] Recording answer from ${data.player_name}: ${data.answer_index}, time: ${data.answer_time}ms`)
       
-      // Actualizar respuestas de otros jugadores
+      // Actualizar respuestas y tiempos de otros jugadores
       setPlayerAnswers(prev => ({
         ...prev,
         [data.player_id]: data.answer_index
       }))
+      
+      if (data.answer_time !== undefined) {
+        setPlayerAnswerTimes(prev => ({
+          ...prev,
+          [data.player_id]: data.answer_time
+        }))
+      }
     })
     
     channel.subscribe((status) => {
@@ -421,10 +434,29 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
     }
   }, [playerAnswers, players, gameState, showAnswer, currentQuestionIndex, timeLeft, player.is_host, player.name, room.id])
 
+  // Función para calcular puntos basados en velocidad y corrección
+  const calculatePoints = (isCorrect: boolean, timeLimit: number, answerTime: number): number => {
+    if (!isCorrect) return 0
+    
+    // Puntos base por respuesta correcta
+    const basePoints = 500
+    
+    // Puntos bonus por velocidad (máximo 500 puntos adicionales)
+    // Fórmula: bonus = 500 * (tiempo restante / tiempo límite)
+    // Respuesta instantánea = 500 bonus, respuesta al final = 0 bonus
+    const timeBonus = Math.floor(500 * ((timeLimit * 1000 - answerTime) / (timeLimit * 1000)))
+    
+    const totalPoints = basePoints + Math.max(0, timeBonus)
+    
+    console.log(`💯 Points calculation: base=${basePoints}, timeBonus=${timeBonus}, total=${totalPoints}`)
+    return totalPoints
+  }
+
   // Calcular resultados cuando se muestren las respuestas (sin incluir gameResults en dependencias para evitar loops)
   useEffect(() => {
     if (showAnswer && gameState === 'question' && currentGame?.questions?.[currentQuestionIndex]) {
       const currentQuestion = currentGame.questions[currentQuestionIndex]
+      const timeLimit = currentQuestion.time_limit || 30
       
       console.log('📊 Calculating results for question:', currentQuestionIndex)
       
@@ -437,6 +469,7 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
           }
           
           const playerAnswer = playerAnswers[p.id]
+          const answerTime = playerAnswerTimes[p.id] || (timeLimit * 1000) // Si no hay tiempo, usar el límite
           const isCorrect = playerAnswer === currentQuestion.correct_answer
           
           // Solo actualizar si esta pregunta no se ha contado aún
@@ -444,7 +477,9 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
             newResults[p.id].total += 1
             if (isCorrect) {
               newResults[p.id].correct += 1
-              newResults[p.id].score += 100 // 100 puntos por respuesta correcta
+              const points = calculatePoints(isCorrect, timeLimit, answerTime)
+              newResults[p.id].score += points
+              console.log(`📊 Player ${p.name}: +${points} points (total: ${newResults[p.id].score})`)
             }
           }
         })
@@ -453,13 +488,14 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
         return newResults
       })
     }
-  }, [showAnswer, gameState, currentQuestionIndex, currentGame, players, playerAnswers])
+  }, [showAnswer, gameState, currentQuestionIndex, currentGame, players, playerAnswers, playerAnswerTimes])
 
   // Efecto especial para el host: iniciar el juego automáticamente si ya tiene los datos
   useEffect(() => {
     if (player.is_host && roomState === 'playing' && currentGame && gameState === 'waiting') {
       console.log('🏠 Host auto-starting game with current data')
       setGameState('question')
+      setQuestionStartTime(Date.now()) // Iniciar cronómetro
       if (currentGame.questions?.[0]) {
         setTimeLeft(currentGame.questions[0].time_limit || 30)
       }
@@ -722,6 +758,7 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
       setGameState('question')
       setCurrentQuestionIndex(0)
       setTimeLeft(fullGameData.questions?.[0]?.time_limit || 30)
+      setQuestionStartTime(Date.now()) // Iniciar cronómetro de la primera pregunta
       playGameStart()
     } catch (err) {
       setError('Error al iniciar el juego')
@@ -735,19 +772,26 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
   const handleAnswerSelect = useCallback((answerIndex: number) => {
     if (selectedAnswer !== null || showAnswer || waitingForPlayers) return
 
-    console.log(`📝 [${player.name}] Player selected answer: ${answerIndex}`)
+    // Calcular tiempo de respuesta
+    const answerTime = Date.now() - questionStartTime
+    console.log(`📝 [${player.name}] Player selected answer: ${answerIndex}, time: ${answerTime}ms`)
     console.log(`📝 [${player.name}] Player has now answered, should not receive time up messages`)
     setSelectedAnswer(answerIndex)
     
     const currentQuestion = currentGame?.questions?.[currentQuestionIndex]
     if (!currentQuestion) return
 
-    // Actualizar las respuestas locales
+    // Actualizar las respuestas y tiempos locales
     const newPlayerAnswers = {
       ...playerAnswers,
       [player.id]: answerIndex
     }
     setPlayerAnswers(newPlayerAnswers)
+    
+    setPlayerAnswerTimes(prev => ({
+      ...prev,
+      [player.id]: answerTime
+    }))
     
     // Reproducir sonido basado en si es correcto
     const isCorrect = answerIndex === currentQuestion.correct_answer
@@ -768,6 +812,7 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
           player_id: player.id,
           player_name: player.name,
           answer_index: answerIndex,
+          answer_time: answerTime,
           question_index: currentQuestionIndex,
           room_id: room.id,
           timestamp: Date.now()
@@ -796,7 +841,7 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
       setWaitingForPlayers(true)
       console.log(`⏳ [${player.name}] Waiting for other players to answer`)
     }
-  }, [selectedAnswer, showAnswer, waitingForPlayers, player.name, player.id, currentGame, currentQuestionIndex, playerAnswers, playCorrect, playIncorrect, room.id, players])
+  }, [selectedAnswer, showAnswer, waitingForPlayers, player.name, player.id, currentGame, currentQuestionIndex, playerAnswers, playCorrect, playIncorrect, room.id, players, questionStartTime])
 
   const handleTimeUp = useCallback(() => {
     if (showAnswer) return
@@ -814,6 +859,14 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
         [player.id]: null
       }))
       
+      // Registrar tiempo máximo (tiempo agotado)
+      const currentQuestion = currentGame?.questions?.[currentQuestionIndex]
+      const timeLimit = currentQuestion?.time_limit || 30
+      setPlayerAnswerTimes(prev => ({
+        ...prev,
+        [player.id]: timeLimit * 1000
+      }))
+      
       // Enviar respuesta "sin respuesta" a otros jugadores
       try {
         const channel = supabase.channel(`game-sync-${room.id}`)
@@ -824,6 +877,7 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
             player_id: player.id,
             player_name: player.name,
             answer_index: null, // Sin respuesta por tiempo agotado
+            answer_time: timeLimit * 1000,
             question_index: currentQuestionIndex,
             room_id: room.id,
             timestamp: Date.now()
@@ -885,10 +939,12 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
       setSelectedAnswer(null)
       setShowAnswer(false)
       setPlayerAnswers({}) // Limpiar respuestas anteriores
+      setPlayerAnswerTimes({}) // Limpiar tiempos de respuesta
       setWaitingForPlayers(false)
       setTimeLeft(newTimeLimit)
       setGameState('question')
       setHasTimedOut(false) // Resetear estado de timeout
+      setQuestionStartTime(Date.now()) // Iniciar cronómetro para nueva pregunta
       
       // SINCRONIZAR con todos los participantes si soy el host (múltiples intentos para garantizar llegada)
       if (player.is_host) {
@@ -1264,59 +1320,129 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
             </div>
 
             {showAnswer && (
-              <div className="mt-8 text-center">
-                {(() => {
-                  // Obtener la respuesta del jugador actual de forma más robusta
-                  const playerAnswer = selectedAnswer !== null ? selectedAnswer : playerAnswers[player.id]
-                  const isCorrect = playerAnswer === currentQuestion.correct_answer
-                  const hasAnswered = playerAnswer !== null && playerAnswer !== undefined
-                  
-                  return (
-                    <div className={`text-2xl font-bold mb-4 ${
-                      isCorrect ? 'text-green-600' : 'text-red-600'
-                    }`}>
-                      {isCorrect
-                        ? '¡Correcto!' 
-                        : hasTimedOut && !hasAnswered
-                        ? '¡Tiempo Agotado!' 
-                        : '¡Incorrecto!'
-                      }
-                    </div>
-                  )
-                })()}
+              <div className="mt-8">
+                {/* Resultado de la respuesta */}
+                <div className="text-center mb-6">
+                  {(() => {
+                    // Obtener la respuesta del jugador actual de forma más robusta
+                    const playerAnswer = selectedAnswer !== null ? selectedAnswer : playerAnswers[player.id]
+                    const isCorrect = playerAnswer === currentQuestion.correct_answer
+                    const hasAnswered = playerAnswer !== null && playerAnswer !== undefined
+                    
+                    return (
+                      <div className={`text-2xl font-bold mb-4 ${
+                        isCorrect ? 'text-green-600' : 'text-red-600'
+                      }`}>
+                        {isCorrect
+                          ? '¡Correcto!' 
+                          : hasTimedOut && !hasAnswered
+                          ? '¡Tiempo Agotado!' 
+                          : '¡Incorrecto!'
+                        }
+                      </div>
+                    )
+                  })()}
+                </div>
+
+                {/* Leaderboard parcial - Visible para TODOS los jugadores */}
+                <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
+                  <h3 className="text-xl font-bold text-gray-800 mb-4 text-center">
+                    📊 Clasificación Actual
+                  </h3>
+                  <div className="space-y-2">
+                    {players
+                      .map(p => {
+                        const playerResults = gameResults[p.id] || { correct: 0, total: 0, score: 0 }
+                        return {
+                          ...p,
+                          score: playerResults.score,
+                          correct: playerResults.correct
+                        }
+                      })
+                      .sort((a, b) => b.score - a.score)
+                      .map((p, index) => {
+                        const isCurrentPlayer = p.id === player.id
+                        return (
+                          <div
+                            key={p.id}
+                            className={`flex items-center gap-3 p-3 rounded-lg ${
+                              isCurrentPlayer 
+                                ? 'bg-blue-100 border-2 border-blue-400' 
+                                : index < 3 
+                                ? 'bg-yellow-50 border border-yellow-200'
+                                : 'bg-gray-50 border border-gray-200'
+                            }`}
+                          >
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${
+                              index === 0 ? 'bg-yellow-500 text-white' :
+                              index === 1 ? 'bg-gray-400 text-white' :
+                              index === 2 ? 'bg-orange-500 text-white' :
+                              'bg-gray-300 text-gray-700'
+                            }`}>
+                              {index + 1}
+                            </div>
+                            <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center">
+                              <span className="text-lg">{p.avatar}</span>
+                            </div>
+                            <div className="flex-1">
+                              <h4 className="font-semibold text-gray-800">
+                                {p.name}
+                                {isCurrentPlayer && (
+                                  <span className="ml-2 text-xs bg-blue-600 text-white px-2 py-0.5 rounded-full">
+                                    Tú
+                                  </span>
+                                )}
+                              </h4>
+                              <p className="text-xs text-gray-600">
+                                {p.correct} correctas
+                              </p>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-lg font-bold text-gray-800">
+                                {p.score}
+                              </div>
+                              <div className="text-xs text-gray-500">pts</div>
+                            </div>
+                          </div>
+                        )
+                      })}
+                  </div>
+                </div>
                 
                 {/* Controles del host para avanzar */}
-                {player.is_host ? (
-                  <div className="space-y-4">
-                    <div className="text-lg text-gray-600 mb-4">
-                      Todos los jugadores han respondido
+                <div className="text-center">
+                  {player.is_host ? (
+                    <div className="space-y-4">
+                      <div className="text-lg text-gray-600 mb-4">
+                        Todos los jugadores han respondido
+                      </div>
+                      
+                      {currentQuestionIndex + 1 < (currentGame?.questions?.length || 0) ? (
+                        <button
+                          onClick={handleNextQuestion}
+                          className="btn-dominican-primary px-8 py-3 text-lg"
+                        >
+                          ▶️ Siguiente Pregunta ({currentQuestionIndex + 2} de {currentGame?.questions?.length})
+                        </button>
+                      ) : (
+                        <button
+                          onClick={handleNextQuestion}
+                          className="btn-dominican-primary px-8 py-3 text-lg"
+                        >
+                          🏁 Ver Resultados Finales
+                        </button>
+                      )}
+                      
+                      <div className="text-sm text-gray-500">
+                        Solo el host puede avanzar a la siguiente pregunta
+                      </div>
                     </div>
-                    
-                    {currentQuestionIndex + 1 < (currentGame?.questions?.length || 0) ? (
-                      <button
-                        onClick={handleNextQuestion}
-                        className="btn-dominican-primary px-8 py-3 text-lg"
-                      >
-                        ▶️ Siguiente Pregunta ({currentQuestionIndex + 2} de {currentGame?.questions?.length})
-                      </button>
-                    ) : (
-                      <button
-                        onClick={handleNextQuestion}
-                        className="btn-dominican-primary px-8 py-3 text-lg"
-                      >
-                        🏁 Ver Resultados
-                      </button>
-                    )}
-                    
-                    <div className="text-sm text-gray-500">
-                      Solo el host puede avanzar a la siguiente pregunta
+                  ) : (
+                    <div className="text-lg text-gray-600">
+                      Esperando que el host avance a la siguiente pregunta...
                     </div>
-                  </div>
-                ) : (
-                  <div className="text-lg text-gray-600">
-                    Esperando que el host avance a la siguiente pregunta...
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
             )}
           </div>
