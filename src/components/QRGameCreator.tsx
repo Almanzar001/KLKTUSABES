@@ -21,6 +21,8 @@ const QRGameCreator: React.FC<QRGameCreatorProps> = ({ onBack }) => {
   const [selectedGameId, setSelectedGameId] = useState('')
   const [sessionTitle, setSessionTitle] = useState('')
   const [sessionDescription, setSessionDescription] = useState('')
+  const [maxParticipants, setMaxParticipants] = useState(50)
+  const [activeTimeHours, setActiveTimeHours] = useState(24)
   
   // Estados de la UI
   const [loading, setLoading] = useState(true)
@@ -88,7 +90,9 @@ const QRGameCreator: React.FC<QRGameCreatorProps> = ({ onBack }) => {
         selectedGameId,
         sessionTitle.trim(),
         sessionDescription.trim(),
-        user.id
+        user.id,
+        maxParticipants,
+        activeTimeHours
       )
 
       if (error) {
@@ -104,6 +108,8 @@ const QRGameCreator: React.FC<QRGameCreatorProps> = ({ onBack }) => {
       setSelectedGameId('')
       setSessionTitle('')
       setSessionDescription('')
+      setMaxParticipants(50)
+      setActiveTimeHours(24)
       setShowCreateForm(false)
     } catch (err) {
       setError('Error inesperado al crear la sesión')
@@ -347,6 +353,52 @@ const QRGameCreator: React.FC<QRGameCreatorProps> = ({ onBack }) => {
                   maxLength={300}
                 />
               </div>
+
+              {/* Configuraciones adicionales */}
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Máximo de Participantes
+                  </label>
+                  <select
+                    value={maxParticipants}
+                    onChange={(e) => setMaxParticipants(Number(e.target.value))}
+                    className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-dominican-blue"
+                  >
+                    <option value={10}>10 participantes</option>
+                    <option value={25}>25 participantes</option>
+                    <option value={50}>50 participantes</option>
+                    <option value={100}>100 participantes</option>
+                    <option value={200}>200 participantes</option>
+                    <option value={999}>Sin límite</option>
+                  </select>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Número máximo de personas que pueden participar
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Tiempo Activo
+                  </label>
+                  <select
+                    value={activeTimeHours}
+                    onChange={(e) => setActiveTimeHours(Number(e.target.value))}
+                    className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-dominican-blue"
+                  >
+                    <option value={1}>1 hora</option>
+                    <option value={6}>6 horas</option>
+                    <option value={12}>12 horas</option>
+                    <option value={24}>24 horas (1 día)</option>
+                    <option value={72}>72 horas (3 días)</option>
+                    <option value={168}>168 horas (1 semana)</option>
+                    <option value={720}>720 horas (30 días)</option>
+                  </select>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Tiempo que estará disponible la sesión
+                  </p>
+                </div>
+              </div>
             </div>
             
             <div className="flex items-center gap-3 mt-6">
@@ -363,6 +415,8 @@ const QRGameCreator: React.FC<QRGameCreatorProps> = ({ onBack }) => {
                   setSelectedGameId('')
                   setSessionTitle('')
                   setSessionDescription('')
+                  setMaxParticipants(50)
+                  setActiveTimeHours(24)
                 }}
                 className="btn-dominican-outline flex-1"
               >

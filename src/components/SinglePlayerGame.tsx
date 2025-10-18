@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react'
-import { ArrowLeft, Play, CheckCircle, X, RotateCcw } from 'lucide-react'
-import { gameHelpers } from '../supabase'
+import { ArrowLeft, Play, CheckCircle, X, RotateCcw, Trophy } from 'lucide-react'
+import { gameHelpers, qrResultsHelpers } from '../supabase'
 import { Game, Question, calculatePoints } from '../types'
 import GameSelector from './GameSelector'
+import QRLeaderboard from './QRLeaderboard'
 import { useGameSounds } from '../hooks/useGameSounds'
 
 interface SinglePlayerGameProps {
@@ -10,6 +11,7 @@ interface SinglePlayerGameProps {
   game?: Game
   isQRSession?: boolean
   qrSessionTitle?: string
+  qrSessionId?: string
 }
 
 interface GameResult {
@@ -29,7 +31,8 @@ const SinglePlayerGame: React.FC<SinglePlayerGameProps> = ({
   onBack, 
   game: initialGame,
   isQRSession = false,
-  qrSessionTitle 
+  qrSessionTitle,
+  qrSessionId 
 }) => {
   // Hook de sonidos
   const { playCorrect, playIncorrect, playTick, playTimeUp, playGameStart, playGameEnd } = useGameSounds()
@@ -39,7 +42,12 @@ const SinglePlayerGame: React.FC<SinglePlayerGameProps> = ({
   const [selectedGame, setSelectedGame] = useState<Game | null>(initialGame || null)
   const [shuffledQuestions, setShuffledQuestions] = useState<ShuffledQuestion[]>([])
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0)
-  const [gameState, setGameState] = useState<'select' | 'playing' | 'results'>('select')
+  const [gameState, setGameState] = useState<'select' | 'playing' | 'results' | 'leaderboard' | 'name-input'>('select')
+  
+  // Estados para sesiones QR
+  const [playerName, setPlayerName] = useState('')
+  const [showNameInput, setShowNameInput] = useState(false)
+  const [savingResults, setSavingResults] = useState(false)
   
   // Estados del juego
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null)
@@ -247,7 +255,13 @@ const SinglePlayerGame: React.FC<SinglePlayerGameProps> = ({
     if (!selectedGame?.questions || nextIndex >= selectedGame.questions.length) {
       // Juego terminado - reproducir sonido de fin de juego
       playGameEnd()
-      setGameState('results')
+      
+      // Si es sesión QR y no tenemos nombre de jugador, pedirlo primero
+      if (isQRSession && qrSessionId && !playerName.trim()) {
+        setGameState('name-input')
+      } else {
+        setGameState('results')
+      }
       return
     }
 
@@ -288,6 +302,63 @@ const SinglePlayerGame: React.FC<SinglePlayerGameProps> = ({
   const handleSelectNewGame = () => {
     setSelectedGame(null)
     setGameState('select')
+  }
+
+  // Función para guardar resultados de sesión QR
+  const saveQRResults = async (name: string) => {
+    if (!isQRSession || !qrSessionId || !selectedGame) return
+    
+    setSavingResults(true)
+    try {
+      const results = calculateResults()
+      const avgTime = answers.length > 0 
+        ? answers.reduce((sum, a) => sum + a.timeToAnswer, 0) / answers.length / 1000 
+        : 0
+
+      const gameData = {
+        game_title: selectedGame.title,
+        answers: answers,
+        completed_at: new Date().toISOString()
+      }
+
+      const { error } = await qrResultsHelpers.saveQRSessionResult(
+        qrSessionId,
+        name.trim(),
+        results.totalPoints,
+        results.correctAnswers,
+        results.totalQuestions,
+        avgTime,
+        gameData
+      )
+
+      if (error) {
+        console.error('Error saving QR results:', error)
+        // En caso de error, permitir continuar pero mostrar mensaje
+        alert('Error al guardar resultados, pero puedes continuar viendo tus puntos')
+      }
+    } catch (err) {
+      console.error('Error:', err)
+    } finally {
+      setSavingResults(false)
+    }
+  }
+
+  // Manejar envío de nombre para sesión QR
+  const handleNameSubmit = async () => {
+    if (!playerName.trim()) return
+    
+    await saveQRResults(playerName)
+    setGameState('results')
+  }
+
+  // Manejar mostrar leaderboard
+  const handleShowLeaderboard = () => {
+    setGameState('leaderboard')
+  }
+
+  // Manejar volver desde leaderboard
+  const handleBackFromLeaderboard = () => {
+    setGameState('results')
   }
 
   // Mostrar selector de juegos
@@ -593,6 +664,75 @@ const SinglePlayerGame: React.FC<SinglePlayerGameProps> = ({
     )
   }
 
+  // Pantalla de input de nombre para sesión QR
+  if (gameState === 'name-input' && isQRSession) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="max-w-md mx-auto">
+          <div className="bg-white rounded-xl shadow-lg p-8">
+            <div className="text-center mb-6">
+              <div className="w-16 h-16 bg-green-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Trophy className="w-8 h-8 text-white" />
+              </div>
+              <h2 className="text-2xl font-bold text-gray-800 mb-2">
+                ¡Juego Completado!
+              </h2>
+              <p className="text-gray-600">
+                Ingresa tu nombre para guardar tu puntuación en el leaderboard
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Tu Nombre *
+                </label>
+                <input
+                  type="text"
+                  value={playerName}
+                  onChange={(e) => setPlayerName(e.target.value)}
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600"
+                  placeholder="Ingresa tu nombre"
+                  maxLength={30}
+                  onKeyPress={(e) => e.key === 'Enter' && handleNameSubmit()}
+                />
+              </div>
+
+              <button
+                onClick={handleNameSubmit}
+                disabled={!playerName.trim() || savingResults}
+                className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-6 rounded-lg transition-all duration-200 disabled:opacity-50"
+              >
+                {savingResults ? 'Guardando...' : 'Guardar y Ver Resultados'}
+              </button>
+
+              <button
+                onClick={() => setGameState('results')}
+                className="w-full btn-dominican-outline py-3 px-6"
+              >
+                Ver Resultados sin Guardar
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Vista de Leaderboard para sesión QR
+  if (gameState === 'leaderboard' && isQRSession && qrSessionId) {
+    return (
+      <QRLeaderboard
+        qrSessionId={qrSessionId}
+        sessionTitle={qrSessionTitle || 'Sesión QR'}
+        currentPlayerName={playerName}
+        currentPlayerScore={calculateResults().totalPoints}
+        onBack={handleBackFromLeaderboard}
+        onPlayAgain={handlePlayAgain}
+      />
+    )
+  }
+
   // Pantalla de resultados
   if (gameState === 'results' && selectedGame) {
     const results = calculateResults()
@@ -705,19 +845,29 @@ const SinglePlayerGame: React.FC<SinglePlayerGameProps> = ({
             </div>
 
             {/* Acciones */}
-            <div className="flex gap-4">
+            <div className="flex flex-wrap gap-4">
               <button
                 onClick={handlePlayAgain}
-                className="btn-dominican-primary flex-1"
+                className="btn-dominican-primary flex-1 min-w-0"
               >
                 <RotateCcw className="w-5 h-5 mr-2" />
                 Jugar de Nuevo
               </button>
               
+              {isQRSession && qrSessionId && (
+                <button
+                  onClick={handleShowLeaderboard}
+                  className="bg-yellow-600 hover:bg-yellow-700 text-white font-semibold py-3 px-6 rounded-lg transition-all duration-200 flex-1 min-w-0"
+                >
+                  <Trophy className="w-5 h-5 mr-2 inline" />
+                  Ver Leaderboard
+                </button>
+              )}
+              
               {!isQRSession && (
                 <button
                   onClick={handleSelectNewGame}
-                  className="btn-dominican-outline flex-1"
+                  className="btn-dominican-outline flex-1 min-w-0"
                 >
                   Elegir Otro Juego
                 </button>
@@ -725,7 +875,7 @@ const SinglePlayerGame: React.FC<SinglePlayerGameProps> = ({
               
               <button
                 onClick={onBack}
-                className="btn-dominican-outline flex-1"
+                className="btn-dominican-outline flex-1 min-w-0"
               >
                 Salir
               </button>

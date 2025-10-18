@@ -1193,7 +1193,10 @@ export const roomHelpers = {
 // Funciones para sesiones QR
 export const qrHelpers = {
   // Crear sesión QR
-  createQRSession: async (accessCode: string, gameId: string, title: string, description: string, userId: string) => {
+  createQRSession: async (accessCode: string, gameId: string, title: string, description: string, userId: string, maxParticipants: number = 50, activeTimeHours: number = 24) => {
+    const expiresAt = new Date()
+    expiresAt.setHours(expiresAt.getHours() + activeTimeHours)
+    
     const { data, error } = await supabase
       .from('qr_game_sessions')
       .insert([
@@ -1203,6 +1206,8 @@ export const qrHelpers = {
           title,
           description,
           created_by_user: userId,
+          max_participants: maxParticipants,
+          expires_at: expiresAt.toISOString(),
           is_active: true
         }
       ])
@@ -1362,6 +1367,73 @@ export const realtimeHelpers = {
   // Desuscribirse de un canal
   unsubscribe: (subscription: any) => {
     return supabase.removeChannel(subscription)
+  }
+}
+
+// Funciones para resultados de sesiones QR
+export const qrResultsHelpers = {
+  // Guardar resultado de jugador en sesión QR
+  saveQRSessionResult: async (qrSessionId: string, playerName: string, totalScore: number, totalCorrect: number, totalQuestions: number, avgTime: number, gameData: any) => {
+    const { data, error } = await supabase
+      .from('qr_session_results')
+      .insert([
+        {
+          qr_session_id: qrSessionId,
+          player_name: playerName,
+          total_score: totalScore,
+          total_correct: totalCorrect,
+          total_questions: totalQuestions,
+          avg_time: avgTime,
+          game_data: gameData,
+          completed_at: new Date().toISOString()
+        }
+      ])
+      .select()
+      .single()
+    return { data, error }
+  },
+
+  // Obtener leaderboard de una sesión QR
+  getQRSessionLeaderboard: async (qrSessionId: string) => {
+    const { data, error } = await supabase
+      .from('qr_session_results')
+      .select('*')
+      .eq('qr_session_id', qrSessionId)
+      .order('total_score', { ascending: false })
+      .order('avg_time', { ascending: true })
+      .limit(10)
+    return { data, error }
+  },
+
+  // Verificar si un jugador ya jugó esta sesión
+  checkPlayerPlayed: async (qrSessionId: string, playerName: string) => {
+    const { data, error } = await supabase
+      .from('qr_session_results')
+      .select('id, total_score, completed_at')
+      .eq('qr_session_id', qrSessionId)
+      .eq('player_name', playerName)
+      .order('completed_at', { ascending: false })
+      .limit(1)
+    return { data, error }
+  },
+
+  // Obtener estadísticas de la sesión
+  getQRSessionStats: async (qrSessionId: string) => {
+    const { data, error } = await supabase
+      .from('qr_session_results')
+      .select('total_score, total_correct, total_questions')
+      .eq('qr_session_id', qrSessionId)
+    
+    if (error) return { data: null, error }
+    
+    const stats = {
+      total_players: data.length,
+      avg_score: data.length > 0 ? Math.round(data.reduce((acc, r) => acc + r.total_score, 0) / data.length) : 0,
+      best_score: data.length > 0 ? Math.max(...data.map(r => r.total_score)) : 0,
+      avg_accuracy: data.length > 0 ? Math.round((data.reduce((acc, r) => acc + (r.total_correct / r.total_questions), 0) / data.length) * 100) : 0
+    }
+    
+    return { data: stats, error: null }
   }
 }
 

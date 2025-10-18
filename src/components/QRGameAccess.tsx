@@ -97,6 +97,7 @@ const QRGameAccess: React.FC<QRGameAccessProps> = ({ onBack }) => {
         onBack={handleGameEnd}
         isQRSession={true}
         qrSessionTitle={qrSession?.title}
+        qrSessionId={qrSession?.id}
       />
     )
   }

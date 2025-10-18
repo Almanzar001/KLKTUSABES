@@ -477,11 +477,77 @@ END $$;
 -- PASO 7: CONFIGURACIÓN FINAL
 -- ============================================================================
 
+-- ============================================================================
+-- PASO 8: TABLA DE RESULTADOS PARA SESIONES QR
+-- ============================================================================
+
+-- Tabla para almacenar resultados de jugadores en sesiones QR
+CREATE TABLE IF NOT EXISTS qr_session_results (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  qr_session_id UUID REFERENCES qr_game_sessions(id) ON DELETE CASCADE NOT NULL,
+  player_name VARCHAR(100) NOT NULL,
+  total_score INTEGER DEFAULT 0,
+  total_correct INTEGER DEFAULT 0,
+  total_questions INTEGER DEFAULT 0,
+  avg_time DECIMAL(10,2) DEFAULT 0, -- Tiempo promedio por pregunta en segundos
+  game_data JSONB, -- Datos adicionales del juego (respuestas detalladas, etc.)
+  completed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Índices para mejorar rendimiento
+CREATE INDEX IF NOT EXISTS idx_qr_session_results_session_id ON qr_session_results(qr_session_id);
+CREATE INDEX IF NOT EXISTS idx_qr_session_results_score ON qr_session_results(qr_session_id, total_score DESC);
+CREATE INDEX IF NOT EXISTS idx_qr_session_results_completed ON qr_session_results(completed_at);
+
+-- Trigger para actualizar updated_at
+CREATE TRIGGER update_qr_session_results_updated_at
+  BEFORE UPDATE ON qr_session_results
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- Políticas RLS para qr_session_results
+ALTER TABLE qr_session_results ENABLE ROW LEVEL SECURITY;
+
+-- Permitir lectura pública para leaderboards
+CREATE POLICY "Public can read QR session results" 
+  ON qr_session_results FOR SELECT 
+  USING (true);
+
+-- Permitir insertar solo a usuarios autenticados o sin autenticación para QR
+CREATE POLICY "Allow insert QR session results" 
+  ON qr_session_results FOR INSERT 
+  WITH CHECK (true);
+
+-- Solo permitir actualizar propios resultados (por nombre de jugador)
+CREATE POLICY "Users can update own QR results" 
+  ON qr_session_results FOR UPDATE 
+  USING (true) 
+  WITH CHECK (true);
+
+-- Vista para estadísticas de sesiones QR
+CREATE OR REPLACE VIEW qr_session_stats AS
+SELECT 
+  qgs.id as session_id,
+  qgs.title,
+  qgs.access_code,
+  qgs.is_active,
+  qgs.max_participants,
+  COUNT(qsr.id) as total_players,
+  COALESCE(MAX(qsr.total_score), 0) as best_score,
+  COALESCE(ROUND(AVG(qsr.total_score::numeric), 0), 0) as avg_score,
+  COALESCE(ROUND(AVG(qsr.total_correct::numeric / NULLIF(qsr.total_questions, 0) * 100), 1), 0) as avg_accuracy,
+  qgs.created_at,
+  qgs.expires_at
+FROM qr_game_sessions qgs
+LEFT JOIN qr_session_results qsr ON qgs.id = qsr.qr_session_id
+GROUP BY qgs.id, qgs.title, qgs.access_code, qgs.is_active, qgs.max_participants, qgs.created_at, qgs.expires_at;
+
 -- Habilitar Realtime para las tablas necesarias
 ALTER PUBLICATION supabase_realtime ADD TABLE rooms;
 ALTER PUBLICATION supabase_realtime ADD TABLE players;
 ALTER PUBLICATION supabase_realtime ADD TABLE game_sessions;
 ALTER PUBLICATION supabase_realtime ADD TABLE player_answers;
+ALTER PUBLICATION supabase_realtime ADD TABLE qr_session_results;
 
 -- Crear vistas útiles para estadísticas (opcional)
 CREATE OR REPLACE VIEW game_stats AS
