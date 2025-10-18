@@ -21,7 +21,7 @@ END $$;
 
 -- Crear índice para optimizar consultas de sincronización
 CREATE INDEX IF NOT EXISTS idx_rooms_question_sync 
-ON rooms (id, current_question_index, updated_at);
+ON rooms (id, current_question_index, created_at);
 
 -- Verificar resultado
 SELECT 'Migration completed' as status;

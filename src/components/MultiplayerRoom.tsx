@@ -679,8 +679,7 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
           supabase
             .from('rooms')
             .update({ 
-              current_question_index: nextIndex,
-              updated_at: new Date().toISOString()
+              current_question_index: nextIndex
             })
             .eq('id', room.id)
             .then(({ error }) => {
