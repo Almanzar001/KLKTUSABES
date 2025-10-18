@@ -136,6 +136,8 @@ CREATE TABLE IF NOT EXISTS qr_game_sessions (
   game_id UUID REFERENCES games(id) ON DELETE CASCADE NOT NULL,
   title VARCHAR(255) NOT NULL,
   description TEXT,
+  max_participants INTEGER DEFAULT 50,
+  expires_at TIMESTAMP WITH TIME ZONE DEFAULT (NOW() + INTERVAL '24 hours'),
   is_active BOOLEAN DEFAULT true,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   created_by_user UUID REFERENCES auth.users(id) ON DELETE SET NULL
@@ -170,6 +172,7 @@ CREATE INDEX IF NOT EXISTS idx_player_answers_question ON player_answers(questio
 CREATE INDEX IF NOT EXISTS idx_qr_sessions_code ON qr_game_sessions(access_code);
 CREATE INDEX IF NOT EXISTS idx_qr_sessions_active ON qr_game_sessions(is_active) WHERE is_active = true;
 CREATE INDEX IF NOT EXISTS idx_qr_sessions_created_by ON qr_game_sessions(created_by_user);
+CREATE INDEX IF NOT EXISTS idx_qr_sessions_expires_at ON qr_game_sessions(expires_at);
 
 -- PASO 4: CONFIGURACIÓN DE ROW LEVEL SECURITY (RLS)
 -- ============================================================================
@@ -461,12 +464,14 @@ BEGIN
     IF game_id IS NOT NULL THEN
       -- Crear sesión QR de ejemplo si no existe
       IF NOT EXISTS (SELECT 1 FROM qr_game_sessions WHERE title = 'Trivia del Viernes') THEN
-        INSERT INTO qr_game_sessions (access_code, game_id, title, description, created_by_user)
+        INSERT INTO qr_game_sessions (access_code, game_id, title, description, max_participants, expires_at, created_by_user)
         VALUES (
           generate_unique_qr_code(),
           game_id,
           'Trivia del Viernes',
           'Sesión abierta para todos los estudiantes',
+          100,
+          NOW() + INTERVAL '7 days',
           sample_user_id
         );
       END IF;
