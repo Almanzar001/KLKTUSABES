@@ -168,10 +168,14 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
 
   // Suscribirse a Broadcast Channel para recibir datos de juego y sincronización
   useEffect(() => {
-    const gameChannel = new BroadcastChannel(`game-${room.id}`)
+    const channelName = `game-${room.id}`
+    console.log(`📡 [${player.name}] Setting up BroadcastChannel: ${channelName}`)
+    
+    const gameChannel = new BroadcastChannel(channelName)
     
     gameChannel.onmessage = (event) => {
-      console.log('📡 Broadcast message received by', player.is_host ? 'HOST' : 'PARTICIPANT', player.name, ':', event.data)
+      console.log(`📡 [${player.name}] Broadcast message received:`, event.data)
+      console.log(`📡 [${player.name}] Current state: roomState=${roomState}, gameState=${gameState}, questionIndex=${currentQuestionIndex}`)
       
       if (event.data.type === 'GAME_DATA' && event.data.game) {
         console.log('✅ Game data received via broadcast:', event.data.game.title, 'Questions:', event.data.game.questions?.length)
@@ -249,6 +253,88 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
       gameChannel.close()
     }
   }, [room.id, player.is_host, roomState, currentQuestionIndex, showAnswer])
+
+  // Suscribirse a canal de Supabase Real-time para sincronización de estado del juego
+  useEffect(() => {
+    if (!room.id) return
+
+    const channelName = `game-sync-${room.id}`
+    console.log(`📡 [${player.name}] Setting up Supabase Real-time channel: ${channelName}`)
+    
+    const channel = supabase.channel(channelName)
+    
+    channel.on('broadcast', { event: 'game_state_sync' }, (payload) => {
+      console.log(`📡 [${player.name}] Supabase Real-time message received:`, payload)
+      
+      if (player.is_host) {
+        console.log(`📡 [${player.name}] Host ignoring own sync message`)
+        return
+      }
+      
+      const data = payload.payload
+      if (!data || data.sender === player.name) {
+        console.log(`📡 [${player.name}] Ignoring message from self`)
+        return
+      }
+      
+      console.log(`🔄 [${player.name}] Processing Supabase sync:`, data)
+      
+      // Procesar el mensaje de sincronización igual que BroadcastChannel
+      if (data.type === 'GAME_STATE_SYNC') {
+        const { 
+          questionIndex, 
+          gameState: newGameState, 
+          timeLeft: newTimeLeft, 
+          showAnswer: newShowAnswer,
+          gameEnded,
+          timestamp 
+        } = data
+        
+        console.log(`🔄 [${player.name}] Supabase sync: Q${currentQuestionIndex} → Q${questionIndex}`)
+        
+        // Ignorar mensajes duplicados o antiguos
+        if (timestamp && timestamp <= lastSyncTimestamp) {
+          console.log(`📝 [${player.name}] Ignoring old Supabase sync message`)
+          return
+        }
+        
+        if (timestamp) {
+          setLastSyncTimestamp(timestamp)
+        }
+        
+        // Manejar fin del juego
+        if (gameEnded) {
+          console.log(`🏁 [${player.name}] Supabase sync: Game ended`)
+          setRoomState('results')
+          setGameState('leaderboard')
+          return
+        }
+        
+        // Sincronizar estado
+        console.log(`🔄 [${player.name}] Supabase syncing: Q${currentQuestionIndex} → Q${questionIndex}, gameState: ${newGameState}, showAnswer: ${newShowAnswer}`)
+        
+        setCurrentQuestionIndex(questionIndex)
+        setGameState(newGameState)
+        setTimeLeft(newTimeLeft)
+        setShowAnswer(newShowAnswer)
+        setSelectedAnswer(null)
+        setPlayerAnswers({})
+        setWaitingForPlayers(false)
+        setError(null)
+        
+        console.log(`✅ [${player.name}] Supabase sync completed to question ${questionIndex + 1}, timeLeft: ${newTimeLeft}s`)
+      }
+    })
+    
+    channel.subscribe((status) => {
+      console.log(`📡 [${player.name}] Supabase channel status:`, status)
+    })
+    
+    return () => {
+      console.log(`📡 [${player.name}] Cleaning up Supabase Real-time channel`)
+      supabase.removeChannel(channel)
+    }
+  }, [room.id, player.name, player.is_host, currentQuestionIndex, lastSyncTimestamp])
 
   // Efecto especial para el host: iniciar el juego automáticamente si ya tiene los datos
   useEffect(() => {
@@ -666,16 +752,18 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
         // Enviar el mensaje múltiples veces para asegurar llegada con mayor frecuencia
         for (let i = 0; i < 5; i++) {
           setTimeout(() => {
-            const gameChannel = new BroadcastChannel(`game-${room.id}`)
-            console.log(`📤 [HOST-${player.name}] Sending broadcast attempt ${i + 1}/5`)
+            const channelName = `game-${room.id}`
+            const gameChannel = new BroadcastChannel(channelName)
+            console.log(`📤 [HOST-${player.name}] Sending broadcast attempt ${i + 1}/5 on channel: ${channelName}`)
+            console.log(`📤 [HOST-${player.name}] Message content:`, broadcastMessage)
             gameChannel.postMessage(broadcastMessage)
             setTimeout(() => gameChannel.close(), 100)
           }, i * 100) // Reducir tiempo entre intentos a 100ms
         }
         
-        // RESPALDO: También actualizar un campo en la base de datos como señal
+        // MÉTODO PRINCIPAL: Actualizar base de datos para sincronización confiable
         try {
-          console.log(`💾 [HOST-${player.name}] Updating room current_question_index as backup`)
+          console.log(`💾 [HOST-${player.name}] Updating room current_question_index for sync`)
           supabase
             .from('rooms')
             .update({ 
@@ -690,7 +778,28 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
               }
             })
         } catch (err) {
-          console.error('Error in backup sync:', err)
+          console.error('Error in database sync:', err)
+        }
+        
+        // MÉTODO ADICIONAL: Usar Supabase Real-time para comunicación inmediata
+        try {
+          console.log(`📡 [HOST-${player.name}] Sending real-time sync via Supabase channel`)
+          const channel = supabase.channel(`game-sync-${room.id}`)
+          channel.send({
+            type: 'broadcast',
+            event: 'game_state_sync',
+            payload: {
+              ...broadcastMessage,
+              sender: player.name,
+              room_id: room.id
+            }
+          }).then(() => {
+            console.log(`✅ [HOST-${player.name}] Real-time message sent`)
+          }).catch((err) => {
+            console.error('Error sending real-time message:', err)
+          })
+        } catch (err) {
+          console.error('Error in real-time sync:', err)
         }
       }
     } else {
