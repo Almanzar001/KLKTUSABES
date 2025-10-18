@@ -1084,13 +1084,34 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
           timestamp: Date.now()
         }
         
-        // Enviar múltiples veces para asegurar llegada
+        // Enviar múltiples veces via BroadcastChannel para asegurar llegada
         for (let i = 0; i < 3; i++) {
           setTimeout(() => {
             const gameChannel = new BroadcastChannel(`game-${room.id}`)
             gameChannel.postMessage(broadcastMessage)
             setTimeout(() => gameChannel.close(), 100)
           }, i * 200)
+        }
+        
+        // MÉTODO ADICIONAL: Enviar via Supabase Real-time para mayor confiabilidad
+        try {
+          console.log(`📡 [HOST-${player.name}] Sending game end via Supabase Real-time`)
+          const channel = supabase.channel(`game-sync-${room.id}`)
+          channel.send({
+            type: 'broadcast',
+            event: 'game_state_sync',
+            payload: {
+              ...broadcastMessage,
+              sender: player.name,
+              room_id: room.id
+            }
+          }).then(() => {
+            console.log(`✅ [HOST-${player.name}] Game end message sent via Supabase`)
+          }).catch((err) => {
+            console.error('Error sending game end message:', err)
+          })
+        } catch (err) {
+          console.error('Error in game end sync:', err)
         }
       }
     }
