@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { QrCode, Search, Play, ArrowLeft } from 'lucide-react'
-import { qrHelpers } from '../supabase'
+import { qrHelpers, qrResultsHelpers } from '../supabase'
 import { QRGameSession, Game, isValidQRCode } from '../types'
 import SinglePlayerGame from './SinglePlayerGame'
 
@@ -14,6 +14,8 @@ const QRGameAccess: React.FC<QRGameAccessProps> = ({ onBack }) => {
   const [qrSession, setQRSession] = useState<QRGameSession | null>(null)
   const [currentGame, setCurrentGame] = useState<Game | null>(null)
   const [gameStarted, setGameStarted] = useState(false)
+  const [playerName, setPlayerName] = useState('')
+  const [showNameInput, setShowNameInput] = useState(false)
   
   // Estados de la UI
   const [loading, setLoading] = useState(false)
@@ -91,7 +93,48 @@ const QRGameAccess: React.FC<QRGameAccessProps> = ({ onBack }) => {
       setError('No hay juego disponible para esta sesión')
       return
     }
-    setGameStarted(true)
+    
+    // Mostrar input de nombre antes de iniciar el juego
+    setShowNameInput(true)
+  }
+
+  const handleNameSubmitAndStart = async () => {
+    if (!playerName.trim()) {
+      setError('Por favor ingresa tu nombre')
+      return
+    }
+
+    if (!qrSession?.id) {
+      setError('Error: No se pudo identificar la sesión QR')
+      return
+    }
+
+    try {
+      setLoading(true)
+      setError(null)
+
+      // Verificar si el jugador ya participó en esta sesión
+      const { data: existingResults, error: checkError } = await qrResultsHelpers.checkPlayerPlayed(
+        qrSession.id,
+        playerName.trim()
+      )
+
+      if (checkError) {
+        console.error('Error checking if player already played:', checkError)
+        // Si hay error verificando, permitir continuar
+      } else if (existingResults && existingResults.length > 0) {
+        setError(`El nombre "${playerName.trim()}" ya participó en esta sesión. Por favor usa un nombre diferente.`)
+        return
+      }
+
+      setShowNameInput(false)
+      setGameStarted(true)
+    } catch (err) {
+      console.error('Error checking player participation:', err)
+      setError('Error al verificar participación. Inténtalo de nuevo.')
+    } finally {
+      setLoading(false)
+    }
   }
 
   const handleGameEnd = () => {
@@ -104,6 +147,92 @@ const QRGameAccess: React.FC<QRGameAccessProps> = ({ onBack }) => {
     setAccessCode(cleanValue)
   }
 
+  // Si está mostrando el input de nombre
+  if (showNameInput && qrSession && currentGame) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="max-w-md mx-auto">
+          <div className="bg-white rounded-xl shadow-lg p-8">
+            <div className="text-center mb-6">
+              <div className="w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Play className="w-8 h-8 text-white" />
+              </div>
+              <h2 className="text-2xl font-bold text-gray-800 mb-2">
+                ¡Listo para Jugar!
+              </h2>
+              <p className="text-gray-600 mb-2">
+                {qrSession.title}
+              </p>
+              <p className="text-sm text-gray-500">
+                Ingresa tu nombre para comenzar el juego
+              </p>
+            </div>
+
+            {error && (
+              <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded-lg text-sm">
+                {error}
+              </div>
+            )}
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Tu Nombre *
+                </label>
+                <input
+                  type="text"
+                  value={playerName}
+                  onChange={(e) => setPlayerName(e.target.value)}
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600"
+                  placeholder="Ingresa tu nombre"
+                  maxLength={30}
+                  onKeyPress={(e) => e.key === 'Enter' && handleNameSubmitAndStart()}
+                  autoFocus
+                />
+              </div>
+
+              <button
+                onClick={handleNameSubmitAndStart}
+                disabled={!playerName.trim() || loading}
+                className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-6 rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Play className="w-5 h-5 mr-2 inline" />
+                {loading ? 'Verificando...' : 'Comenzar Juego'}
+              </button>
+
+              <button
+                onClick={() => {
+                  setShowNameInput(false)
+                  setPlayerName('')
+                  setError(null)
+                }}
+                className="w-full btn-dominican-outline py-3 px-6"
+              >
+                Volver
+              </button>
+            </div>
+
+            {/* Información del juego */}
+            <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <span className="font-semibold text-blue-800">Preguntas:</span>
+                  <p className="text-blue-600">{currentGame?.questions?.length || 0}</p>
+                </div>
+                <div>
+                  <span className="font-semibold text-blue-800">Duración:</span>
+                  <p className="text-blue-600">
+                    ~{Math.ceil((currentGame?.questions?.reduce((acc, q) => acc + q.time_limit, 0) || 0) / 60)} min
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   // Si el juego ha comenzado, mostrar el componente de juego
   if (gameStarted && currentGame) {
     return (
@@ -113,6 +242,7 @@ const QRGameAccess: React.FC<QRGameAccessProps> = ({ onBack }) => {
         isQRSession={true}
         qrSessionTitle={qrSession?.title}
         qrSessionId={qrSession?.id}
+        playerName={playerName}
       />
     )
   }

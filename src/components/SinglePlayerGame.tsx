@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { ArrowLeft, Play, CheckCircle, X, RotateCcw, Trophy } from 'lucide-react'
 import { gameHelpers, qrResultsHelpers } from '../supabase'
 import { Game, Question, calculatePoints } from '../types'
@@ -12,6 +12,7 @@ interface SinglePlayerGameProps {
   isQRSession?: boolean
   qrSessionTitle?: string
   qrSessionId?: string
+  playerName?: string
 }
 
 interface GameResult {
@@ -32,7 +33,8 @@ const SinglePlayerGame: React.FC<SinglePlayerGameProps> = ({
   game: initialGame,
   isQRSession = false,
   qrSessionTitle,
-  qrSessionId 
+  qrSessionId,
+  playerName: initialPlayerName
 }) => {
   // Hook de sonidos
   const { playCorrect, playIncorrect, playTick, playTimeUp, playGameStart, playGameEnd } = useGameSounds()
@@ -45,7 +47,7 @@ const SinglePlayerGame: React.FC<SinglePlayerGameProps> = ({
   const [gameState, setGameState] = useState<'select' | 'playing' | 'results' | 'leaderboard' | 'name-input'>('select')
   
   // Estados para sesiones QR
-  const [playerName, setPlayerName] = useState('')
+  const [playerName, setPlayerName] = useState(initialPlayerName || '')
   const [savingResults, setSavingResults] = useState(false)
   
   // Estados del juego
@@ -73,6 +75,13 @@ const SinglePlayerGame: React.FC<SinglePlayerGameProps> = ({
       loadGames()
     }
   }, [isQRSession, selectedGame])
+
+  // Auto-guardar resultados cuando el juego termine en sesiones QR
+  useEffect(() => {
+    if (gameState === 'results' && isQRSession && qrSessionId && playerName.trim()) {
+      handleAutoSaveQRResults()
+    }
+  }, [gameState, isQRSession, qrSessionId, playerName, handleAutoSaveQRResults])
 
   // Timer del juego con efectos visuales y sonoros mejorados
   useEffect(() => {
@@ -255,12 +264,7 @@ const SinglePlayerGame: React.FC<SinglePlayerGameProps> = ({
       // Juego terminado - reproducir sonido de fin de juego
       playGameEnd()
       
-      // Si es sesión QR y no tenemos nombre de jugador, pedirlo primero
-      if (isQRSession && qrSessionId && !playerName.trim()) {
-        setGameState('name-input')
-      } else {
-        setGameState('results')
-      }
+      setGameState('results')
       return
     }
 
@@ -304,7 +308,7 @@ const SinglePlayerGame: React.FC<SinglePlayerGameProps> = ({
   }
 
   // Función para guardar resultados de sesión QR
-  const saveQRResults = async (name: string) => {
+  const saveQRResults = useCallback(async (name: string) => {
     if (!isQRSession || !qrSessionId || !selectedGame) {
       console.log('Cannot save QR results - missing data:', { isQRSession, qrSessionId, selectedGame })
       return
@@ -361,15 +365,14 @@ const SinglePlayerGame: React.FC<SinglePlayerGameProps> = ({
     } finally {
       setSavingResults(false)
     }
-  }
+  }, [isQRSession, qrSessionId, selectedGame, answers, calculateResults, qrResultsHelpers])
 
-  // Manejar envío de nombre para sesión QR
-  const handleNameSubmit = async () => {
-    if (!playerName.trim()) return
-    
-    await saveQRResults(playerName)
-    setGameState('results')
-  }
+  // Manejar guardado automático para sesión QR
+  const handleAutoSaveQRResults = useCallback(async () => {
+    if (isQRSession && qrSessionId && playerName.trim()) {
+      await saveQRResults(playerName)
+    }
+  }, [isQRSession, qrSessionId, playerName, saveQRResults])
 
   // Manejar mostrar leaderboard
   const handleShowLeaderboard = () => {
@@ -684,60 +687,6 @@ const SinglePlayerGame: React.FC<SinglePlayerGameProps> = ({
     )
   }
 
-  // Pantalla de input de nombre para sesión QR
-  if (gameState === 'name-input' && isQRSession) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="max-w-md mx-auto">
-          <div className="bg-white rounded-xl shadow-lg p-8">
-            <div className="text-center mb-6">
-              <div className="w-16 h-16 bg-green-600 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Trophy className="w-8 h-8 text-white" />
-              </div>
-              <h2 className="text-2xl font-bold text-gray-800 mb-2">
-                ¡Juego Completado!
-              </h2>
-              <p className="text-gray-600">
-                Ingresa tu nombre para guardar tu puntuación en el leaderboard
-              </p>
-            </div>
-
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Tu Nombre *
-                </label>
-                <input
-                  type="text"
-                  value={playerName}
-                  onChange={(e) => setPlayerName(e.target.value)}
-                  className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600"
-                  placeholder="Ingresa tu nombre"
-                  maxLength={30}
-                  onKeyPress={(e) => e.key === 'Enter' && handleNameSubmit()}
-                />
-              </div>
-
-              <button
-                onClick={handleNameSubmit}
-                disabled={!playerName.trim() || savingResults}
-                className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-6 rounded-lg transition-all duration-200 disabled:opacity-50"
-              >
-                {savingResults ? 'Guardando...' : 'Guardar y Ver Resultados'}
-              </button>
-
-              <button
-                onClick={() => setGameState('results')}
-                className="w-full btn-dominican-outline py-3 px-6"
-              >
-                Ver Resultados sin Guardar
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    )
-  }
 
   // Vista de Leaderboard para sesión QR
   if (gameState === 'leaderboard' && isQRSession && qrSessionId) {
