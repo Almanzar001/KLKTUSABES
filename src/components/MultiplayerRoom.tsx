@@ -1511,7 +1511,10 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
                     </div>
                   ) : (
                     <div className="text-lg text-gray-600">
-                      Esperando que el host avance a la siguiente pregunta...
+                      {currentQuestionIndex + 1 < (currentGame?.questions?.length || 0) 
+                        ? 'Esperando que el host avance a la siguiente pregunta...'
+                        : 'Esperando que el host muestre los resultados finales...'
+                      }
                     </div>
                   )}
                 </div>
