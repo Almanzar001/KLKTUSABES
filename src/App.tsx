@@ -18,9 +18,19 @@ const AppContent: React.FC = () => {
   const [currentView, setCurrentView] = useState<AppView>('welcome')
   const [currentRoom, setCurrentRoom] = useState<Room | null>(null)
   const [currentPlayer, setCurrentPlayer] = useState<Player | null>(null)
+  const [isQRAccess, setIsQRAccess] = useState(false)
 
-  // Mostrar loading mientras se verifica la autenticación
-  if (loading) {
+  // Verificar si llegamos desde una URL con código QR
+  React.useEffect(() => {
+    const hash = window.location.hash
+    if (hash.includes('qr-game/')) {
+      setIsQRAccess(true)
+      setCurrentView('qr-access')
+    }
+  }, [])
+
+  // Mostrar loading mientras se verifica la autenticación (excepto para acceso QR)
+  if (loading && !isQRAccess) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-dominican-blue to-dominican-red flex items-center justify-center">
         <div className="text-center">
@@ -32,8 +42,8 @@ const AppContent: React.FC = () => {
     )
   }
 
-  // Si no hay usuario, mostrar pantalla de autenticación
-  if (!user) {
+  // Si no hay usuario y no es acceso QR, mostrar pantalla de autenticación
+  if (!user && !isQRAccess) {
     return <AuthScreen />
   }
 
@@ -43,7 +53,12 @@ const AppContent: React.FC = () => {
   }
 
   const handleBackToWelcome = () => {
-    setCurrentView('welcome')
+    // Si venimos de acceso QR, redirigir al QR access en lugar del welcome
+    if (isQRAccess) {
+      setCurrentView('qr-access')
+    } else {
+      setCurrentView('welcome')
+    }
     setCurrentRoom(null)
     setCurrentPlayer(null)
   }
@@ -83,7 +98,17 @@ const AppContent: React.FC = () => {
       
       case 'qr-access':
         return (
-          <QRGameAccess onBack={handleBackToWelcome} />
+          <QRGameAccess 
+            onBack={() => {
+              if (isQRAccess) {
+                // Si venimos de URL QR, limpiar la URL y salir completamente
+                window.location.hash = ''
+                window.location.reload()
+              } else {
+                handleBackToWelcome()
+              }
+            }} 
+          />
         )
       
       case 'admin':
