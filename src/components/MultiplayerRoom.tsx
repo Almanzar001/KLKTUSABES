@@ -449,18 +449,26 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
 
     const interval = setInterval(() => {
       setTimeLeft(prev => {
+        // Si el jugador ya respondió, no ejecutar handleTimeUp para él
         if (prev <= 1) {
-          handleTimeUp()
+          // Solo ejecutar handleTimeUp si el jugador no ha respondido o es el host
+          if (selectedAnswer === null || player.is_host) {
+            handleTimeUp()
+          } else {
+            console.log(`⏰ [${player.name}] Timer ended but player already answered, ignoring`)
+          }
           return 0
         }
         
         const newTime = prev - 1
         
-        // Sonidos del temporizador
-        if (newTime <= 10 && newTime > 5) {
-          playTick()
-        } else if (newTime <= 5 && newTime > 0) {
-          playTick()
+        // Sonidos del temporizador solo si no ha respondido
+        if (selectedAnswer === null) {
+          if (newTime <= 10 && newTime > 5) {
+            playTick()
+          } else if (newTime <= 5 && newTime > 0) {
+            playTick()
+          }
         }
         
         // El host sincroniza el temporizador cada 5 segundos
@@ -481,7 +489,7 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
     }, 1000)
 
     return () => clearInterval(interval)
-  }, [gameState, showAnswer, playTick, player.is_host, currentQuestionIndex])
+  }, [gameState, showAnswer, playTick, player.is_host, currentQuestionIndex, selectedAnswer])
 
   const loadPlayers = async () => {
     try {
@@ -679,6 +687,8 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
   const handleAnswerSelect = (answerIndex: number) => {
     if (selectedAnswer !== null || showAnswer || waitingForPlayers) return
 
+    console.log(`📝 [${player.name}] Player selected answer: ${answerIndex}`)
+    console.log(`📝 [${player.name}] Player has now answered, should not receive time up messages`)
     setSelectedAnswer(answerIndex)
     
     const currentQuestion = currentGame?.questions?.[currentQuestionIndex]
@@ -743,16 +753,45 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
   const handleTimeUp = () => {
     if (showAnswer) return
     
-    playTimeUp()
-    setShowAnswer(true)
-    setWaitingForPlayers(false)
+    console.log(`⏰ [${player.name}] handleTimeUp called - selectedAnswer: ${selectedAnswer}`)
     
-    // Si no respondió, marcar como null
+    // Solo ejecutar lógica de tiempo agotado si este jugador no ha respondido
     if (selectedAnswer === null) {
+      console.log(`⏰ [${player.name}] Player didn't answer, playing time up sound`)
+      playTimeUp()
+      
       setPlayerAnswers(prev => ({
         ...prev,
         [player.id]: null
       }))
+      
+      // Enviar respuesta "sin respuesta" a otros jugadores
+      try {
+        const channel = supabase.channel(`game-sync-${room.id}`)
+        channel.send({
+          type: 'broadcast',
+          event: 'player_answer',
+          payload: {
+            player_id: player.id,
+            player_name: player.name,
+            answer_index: null, // Sin respuesta por tiempo agotado
+            question_index: currentQuestionIndex,
+            room_id: room.id,
+            timestamp: Date.now()
+          }
+        })
+      } catch (err) {
+        console.error('Error sending timeout answer:', err)
+      }
+    } else {
+      console.log(`⏰ [${player.name}] Player already answered, skipping time up logic`)
+    }
+    
+    // El host siempre maneja la sincronización de "tiempo agotado" general
+    if (player.is_host) {
+      console.log(`⏰ [HOST-${player.name}] Time up - checking if should show answers`)
+      setShowAnswer(true)
+      setWaitingForPlayers(false)
     }
     
     // SINCRONIZAR tiempo agotado si soy el host (múltiples intentos)
