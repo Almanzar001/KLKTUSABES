@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { ArrowLeft, Users, Crown, Play } from 'lucide-react'
+import { ArrowLeft, Users, Crown, Play, Trophy, X } from 'lucide-react'
 // import { useAuth } from '../contexts/AuthContext' // Currently unused
 import { roomHelpers, realtimeHelpers, gameHelpers, supabase } from '../supabase'
 import { Room, Player, Game } from '../types'
@@ -45,6 +45,7 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
   const [lastSyncTimestamp, setLastSyncTimestamp] = useState(0)
   const [hasTimedOut, setHasTimedOut] = useState(false)
   const [gameResults, setGameResults] = useState<{[playerId: string]: {correct: number, total: number, score: number}}>({})  
+  const [showLeaderboardModal, setShowLeaderboardModal] = useState(false) // Mostrar leaderboard durante el juego
   
   // Estados de la UI
   const [loading, setLoading] = useState(false)
@@ -533,6 +534,12 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
 
     const interval = setInterval(() => {
       setTimeLeft(prev => {
+        // Si el jugador ya respondió, NO actualizar el temporizador para él (mantenerlo congelado)
+        if (selectedAnswer !== null && !player.is_host) {
+          console.log(`⏰ [${player.name}] Timer frozen - player already answered`)
+          return prev // Mantener el tiempo actual sin decrementar
+        }
+        
         // Si el jugador ya respondió, no ejecutar handleTimeUp para él
         if (prev <= 1) {
           // Solo ejecutar handleTimeUp si el jugador no ha respondido o es el host
@@ -573,7 +580,7 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
     }, 1000)
 
     return () => clearInterval(interval)
-  }, [gameState, showAnswer, playTick, player.is_host, currentQuestionIndex, selectedAnswer, room.id])
+  }, [gameState, showAnswer, playTick, player.is_host, currentQuestionIndex, selectedAnswer, room.id, player.name])
 
   const loadPlayers = async () => {
     try {
@@ -1200,6 +1207,16 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
               </div>
               
               <div className="flex items-center gap-6">
+                {/* Botón de Leaderboard */}
+                <button
+                  onClick={() => setShowLeaderboardModal(true)}
+                  className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors shadow-md"
+                  title="Ver clasificación"
+                >
+                  <Trophy className="w-5 h-5" />
+                  <span className="hidden md:inline font-semibold">Leaderboard</span>
+                </button>
+                
                 {/* Temporizador */}
                 <div className="relative flex items-center justify-center">
                   <svg
@@ -1226,7 +1243,7 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
                     <span className={`font-bold text-lg ${
                       timeLeft <= 5 ? 'text-red-600' : timeLeft <= 10 ? 'text-amber-600' : 'text-green-600'
                     }`}>
-                      {timeLeft}
+                      {selectedAnswer !== null ? '✓' : timeLeft}
                     </span>
                   </div>
                 </div>
@@ -1447,6 +1464,113 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
             )}
           </div>
         </div>
+        
+        {/* Modal de Leaderboard durante el juego */}
+        {showLeaderboardModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[80vh] overflow-hidden">
+              <div className="bg-gradient-to-r from-purple-600 to-blue-600 text-white p-6 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <Trophy className="w-8 h-8" />
+                  <div>
+                    <h3 className="text-2xl font-bold">Clasificación Actual</h3>
+                    <p className="text-purple-100">Pregunta {currentQuestionIndex + 1} de {currentGame?.questions?.length}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowLeaderboardModal(false)}
+                  className="p-2 hover:bg-white hover:bg-opacity-20 rounded-lg transition-colors"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+              
+              <div className="p-6 overflow-y-auto max-h-[calc(80vh-120px)]">
+                <div className="space-y-3">
+                  {players
+                    .map(p => {
+                      const playerResults = gameResults[p.id] || { correct: 0, total: 0, score: 0 }
+                      return {
+                        ...p,
+                        score: playerResults.score,
+                        correct: playerResults.correct,
+                        total: playerResults.total
+                      }
+                    })
+                    .sort((a, b) => b.score - a.score)
+                    .map((p, index) => {
+                      const isCurrentPlayer = p.id === player.id
+                      const hasAnswered = playerAnswers[p.id] !== undefined && playerAnswers[p.id] !== null
+                      
+                      return (
+                        <div
+                          key={p.id}
+                          className={`flex items-center gap-4 p-4 rounded-lg border-2 transition-all ${
+                            isCurrentPlayer 
+                              ? 'border-blue-400 bg-blue-50 ring-2 ring-blue-200' 
+                              : index < 3 
+                              ? 'border-yellow-200 bg-yellow-50'
+                              : 'border-gray-200 bg-white'
+                          }`}
+                        >
+                          <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold ${
+                            index === 0 ? 'bg-yellow-500 text-white' :
+                            index === 1 ? 'bg-gray-400 text-white' :
+                            index === 2 ? 'bg-orange-500 text-white' :
+                            'bg-gray-300 text-gray-700'
+                          }`}>
+                            {index + 1}
+                          </div>
+                          
+                          <div className="w-12 h-12 bg-gray-200 rounded-full flex items-center justify-center">
+                            <span className="text-xl">{p.avatar}</span>
+                          </div>
+                          
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2">
+                              <h4 className="font-bold text-gray-800">
+                                {p.name}
+                                {isCurrentPlayer && (
+                                  <span className="ml-2 text-xs bg-blue-600 text-white px-2 py-1 rounded-full">
+                                    Tú
+                                  </span>
+                                )}
+                                {p.is_host && <Crown className="inline w-4 h-4 text-yellow-500 ml-1" />}
+                              </h4>
+                              {hasAnswered && (
+                                <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full">
+                                  ✓ Respondió
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-sm text-gray-600">
+                              {p.correct} de {p.total} correctas
+                            </p>
+                          </div>
+                          
+                          <div className="text-right">
+                            <div className="text-2xl font-bold text-gray-800">
+                              {p.score}
+                            </div>
+                            <div className="text-xs text-gray-500">puntos</div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                </div>
+              </div>
+              
+              <div className="p-4 bg-gray-50 border-t border-gray-200">
+                <button
+                  onClick={() => setShowLeaderboardModal(false)}
+                  className="w-full btn-dominican-primary py-3"
+                >
+                  Cerrar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     )
   }
