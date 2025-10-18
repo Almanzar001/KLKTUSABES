@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react'
-import { QrCode, Copy, Eye, Trash2, Plus, ArrowLeft, ExternalLink } from 'lucide-react'
+import { QrCode, Copy, Eye, Trash2, Plus, ArrowLeft, ExternalLink, Trophy } from 'lucide-react'
 import QRCodeLib from 'qrcode'
 import { useAuth } from '../contexts/AuthContext'
 import { qrHelpers, gameHelpers } from '../supabase'
 import { Game, QRGameSession, generateQRCode } from '../types'
+import QRLeaderboard from './QRLeaderboard'
 
 interface QRGameCreatorProps {
   onBack: () => void
@@ -16,6 +17,7 @@ const QRGameCreator: React.FC<QRGameCreatorProps> = ({ onBack }) => {
   const [games, setGames] = useState<Game[]>([])
   const [qrSessions, setQRSessions] = useState<QRGameSession[]>([])
   const [showCreateForm, setShowCreateForm] = useState(false)
+  const [selectedSessionForLeaderboard, setSelectedSessionForLeaderboard] = useState<QRGameSession | null>(null)
   
   // Estados del formulario
   const [selectedGameId, setSelectedGameId] = useState('')
@@ -141,6 +143,14 @@ const QRGameCreator: React.FC<QRGameCreatorProps> = ({ onBack }) => {
     }
   }
 
+  const handleShowLeaderboard = (session: QRGameSession) => {
+    setSelectedSessionForLeaderboard(session)
+  }
+
+  const handleBackFromLeaderboard = () => {
+    setSelectedSessionForLeaderboard(null)
+  }
+
   const generateQRCodeImage = async (accessCode: string): Promise<string> => {
     try {
       const url = `${window.location.origin}/#/qr-game/${accessCode}`
@@ -192,6 +202,17 @@ const QRGameCreator: React.FC<QRGameCreatorProps> = ({ onBack }) => {
           </button>
         </div>
       </div>
+    )
+  }
+
+  // Mostrar leaderboard si hay una sesión seleccionada
+  if (selectedSessionForLeaderboard) {
+    return (
+      <QRLeaderboard
+        qrSessionId={selectedSessionForLeaderboard.id}
+        sessionTitle={selectedSessionForLeaderboard.title}
+        onBack={handleBackFromLeaderboard}
+      />
     )
   }
 
@@ -291,6 +312,7 @@ const QRGameCreator: React.FC<QRGameCreatorProps> = ({ onBack }) => {
                 onCopyURL={() => handleCopyURL(session.access_code)}
                 onCopyCode={() => handleCopyCode(session.access_code)}
                 onDeactivate={() => handleDeactivateSession(session.id)}
+                onShowLeaderboard={() => handleShowLeaderboard(session)}
                 copySuccess={copySuccess === session.access_code}
                 generateQRCode={() => generateQRCodeImage(session.access_code)}
               />
@@ -436,6 +458,7 @@ interface QRSessionCardProps {
   onCopyURL: () => void
   onCopyCode: () => void
   onDeactivate: () => void
+  onShowLeaderboard: () => void
   copySuccess: boolean
   generateQRCode: () => Promise<string>
 }
@@ -445,6 +468,7 @@ const QRSessionCard: React.FC<QRSessionCardProps> = ({
   onCopyURL,
   onCopyCode,
   onDeactivate,
+  onShowLeaderboard,
   copySuccess,
   generateQRCode
 }) => {
@@ -523,6 +547,14 @@ const QRSessionCard: React.FC<QRSessionCardProps> = ({
           >
             <Copy className="w-4 h-4" />
             {copySuccess ? '¡Copiado!' : 'Copiar Enlace'}
+          </button>
+          
+          <button
+            onClick={onShowLeaderboard}
+            className="w-full flex items-center justify-center gap-2 bg-yellow-100 text-yellow-700 py-2 px-3 rounded-lg hover:bg-yellow-200 transition-colors text-sm"
+          >
+            <Trophy className="w-4 h-4" />
+            Ver Leaderboard
           </button>
           
           <div className="flex gap-2">
