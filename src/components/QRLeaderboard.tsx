@@ -37,12 +37,21 @@ const QRLeaderboard: React.FC<QRLeaderboardProps> = ({
 
       console.log('Fetching leaderboard for QR session:', qrSessionId)
 
+      // Consulta mejorada con validación de sesión activa
       const { data, error: fetchError } = await supabase
         .from('qr_session_results')
-        .select('*')
+        .select(`
+          *,
+          qr_game_sessions!inner(
+            is_active,
+            expires_at
+          )
+        `)
         .eq('qr_session_id', qrSessionId)
+        .eq('qr_game_sessions.is_active', true)
         .order('total_score', { ascending: false })
         .order('avg_time', { ascending: true })
+        .order('completed_at', { ascending: true })
         .limit(10)
 
       console.log('Leaderboard fetch result:', { data, fetchError })

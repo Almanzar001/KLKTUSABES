@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { ArrowLeft, Play, CheckCircle, X, RotateCcw, Trophy } from 'lucide-react'
-import { gameHelpers, qrResultsHelpers } from '../supabase'
+import { gameHelpers, qrResultsHelpers, supabase } from '../supabase'
 import { Game, Question, calculatePoints } from '../types'
 import GameSelector from './GameSelector'
 import QRLeaderboard from './QRLeaderboard'
@@ -89,9 +89,53 @@ const SinglePlayerGame: React.FC<SinglePlayerGameProps> = ({
       console.log('Cannot save QR results - missing data:', { isQRSession, qrSessionId, selectedGame })
       return
     }
+
+    // Normalizar nombre
+    const normalizedName = name.trim()
+    if (!normalizedName || normalizedName.length < 2) {
+      console.error('Invalid player name:', name)
+      alert('Nombre inválido. Debe tener al menos 2 caracteres.')
+      return
+    }
     
     setSavingResults(true)
     try {
+      // Verificar que la sesión QR esté activa
+      const { data: sessionData, error: sessionError } = await supabase
+        .from('qr_game_sessions')
+        .select('is_active, expires_at, title')
+        .eq('id', qrSessionId)
+        .single()
+
+      if (sessionError || !sessionData) {
+        console.error('Error validating QR session:', sessionError)
+        alert('Error: No se pudo validar la sesión QR.')
+        return
+      }
+
+      if (!sessionData.is_active) {
+        alert('Esta sesión QR ha sido desactivada y ya no acepta nuevos resultados.')
+        return
+      }
+
+      if (sessionData.expires_at && new Date(sessionData.expires_at) < new Date()) {
+        alert('Esta sesión QR ha expirado y ya no acepta nuevos resultados.')
+        return
+      }
+
+      // Verificar si el jugador ya participó (doble verificación)
+      const { data: existingResults, error: checkError } = await qrResultsHelpers.checkPlayerPlayed(
+        qrSessionId,
+        normalizedName
+      )
+
+      if (checkError) {
+        console.error('Error checking existing results:', checkError)
+        // Continuar con precaución
+      } else if (existingResults && existingResults.length > 0) {
+        alert(`El nombre "${normalizedName}" ya participó en esta sesión.`)
+        return
+      }
       const results = calculateResults()
       const avgTime = answers.length > 0 
         ? answers.reduce((sum, a) => sum + a.timeToAnswer, 0) / answers.length / 1000 
@@ -115,7 +159,7 @@ const SinglePlayerGame: React.FC<SinglePlayerGameProps> = ({
 
       const { error } = await qrResultsHelpers.saveQRSessionResult(
         qrSessionId,
-        name.trim(),
+        normalizedName,
         results.totalPoints,
         results.correctAnswers,
         results.totalQuestions,
