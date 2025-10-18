@@ -326,6 +326,30 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
       }
     })
     
+    // Escuchar respuestas de otros jugadores
+    channel.on('broadcast', { event: 'player_answer' }, (payload) => {
+      console.log(`📡 [${player.name}] Player answer received:`, payload)
+      
+      const data = payload.payload
+      if (!data || data.player_id === player.id) {
+        console.log(`📡 [${player.name}] Ignoring own answer`)
+        return
+      }
+      
+      if (data.question_index !== currentQuestionIndex) {
+        console.log(`📡 [${player.name}] Answer for different question, ignoring`)
+        return
+      }
+      
+      console.log(`📝 [${player.name}] Recording answer from ${data.player_name}: ${data.answer_index}`)
+      
+      // Actualizar respuestas de otros jugadores
+      setPlayerAnswers(prev => ({
+        ...prev,
+        [data.player_id]: data.answer_index
+      }))
+    })
+    
     channel.subscribe((status) => {
       console.log(`📡 [${player.name}] Supabase channel status:`, status)
     })
@@ -335,6 +359,53 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
       supabase.removeChannel(channel)
     }
   }, [room.id, player.name, player.is_host, currentQuestionIndex, lastSyncTimestamp])
+
+  // Verificar si todos han respondido cuando las respuestas cambien
+  useEffect(() => {
+    if (gameState !== 'question' || showAnswer) return
+    
+    const totalConnectedPlayers = players.filter(p => p.id).length
+    const answeredPlayers = Object.keys(playerAnswers).filter(id => playerAnswers[id] !== null).length
+    
+    console.log(`📊 [${player.name}] Answer check: ${answeredPlayers}/${totalConnectedPlayers} players answered`)
+    console.log(`📊 [${player.name}] Current answers:`, playerAnswers)
+    
+    if (totalConnectedPlayers > 0 && answeredPlayers === totalConnectedPlayers) {
+      console.log(`🎯 [${player.name}] All players have answered! Showing answers.`)
+      setShowAnswer(true)
+      setWaitingForPlayers(false)
+      
+      // Solo el host sincroniza el estado de "mostrar respuestas"
+      if (player.is_host) {
+        console.log(`📡 [HOST-${player.name}] Broadcasting show answer state to all players`)
+        
+        const broadcastMessage = {
+          type: 'GAME_STATE_SYNC',
+          questionIndex: currentQuestionIndex,
+          gameState: 'question',
+          timeLeft: timeLeft,
+          showAnswer: true,
+          timestamp: Date.now()
+        }
+        
+        // Enviar via Supabase Real-time
+        const channel = supabase.channel(`game-sync-${room.id}`)
+        channel.send({
+          type: 'broadcast',
+          event: 'game_state_sync',
+          payload: {
+            ...broadcastMessage,
+            sender: player.name,
+            room_id: room.id
+          }
+        }).then(() => {
+          console.log(`✅ [HOST-${player.name}] Show answer state broadcasted`)
+        }).catch((err) => {
+          console.error('Error broadcasting show answer:', err)
+        })
+      }
+    }
+  }, [playerAnswers, players, gameState, showAnswer, currentQuestionIndex, timeLeft, player.is_host, player.name, room.id])
 
   // Efecto especial para el host: iniciar el juego automáticamente si ya tiene los datos
   useEffect(() => {
@@ -628,47 +699,44 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
       playIncorrect()
     }
 
-    // TODO: Enviar respuesta al servidor
-    
-    // Verificar si todos los jugadores han respondido
-    const totalPlayers = players.length
-    const answeredPlayers = Object.keys(newPlayerAnswers).filter(id => newPlayerAnswers[id] !== null).length
-    
-    console.log(`📊 Progreso respuestas: ${answeredPlayers}/${totalPlayers}`)
-    
-    if (answeredPlayers === totalPlayers) {
-      // Todos han respondido, mostrar respuestas
-      setShowAnswer(true)
-      setWaitingForPlayers(false)
-      
-      // SINCRONIZAR mostrar respuesta si soy el host (múltiples intentos)
-      if (player.is_host) {
-        console.log('📊 HOST broadcasting show answer state')
-        
-        const broadcastMessage = {
-          type: 'GAME_STATE_SYNC',
-          questionIndex: currentQuestionIndex,
-          gameState: 'question',
-          timeLeft: timeLeft,
-          showAnswer: true,
+    // Enviar respuesta a todos los jugadores via Supabase Real-time
+    try {
+      console.log(`📤 [${player.name}] Sending answer to other players`)
+      const channel = supabase.channel(`game-sync-${room.id}`)
+      channel.send({
+        type: 'broadcast',
+        event: 'player_answer',
+        payload: {
+          player_id: player.id,
+          player_name: player.name,
+          answer_index: answerIndex,
+          question_index: currentQuestionIndex,
+          room_id: room.id,
           timestamp: Date.now()
         }
-        
-        // Enviar múltiples veces para asegurar llegada
-        for (let i = 0; i < 3; i++) {
-          setTimeout(() => {
-            const gameChannel = new BroadcastChannel(`game-${room.id}`)
-            gameChannel.postMessage(broadcastMessage)
-            setTimeout(() => gameChannel.close(), 100)
-          }, i * 200)
-        }
-        
-        // NO avanzar automáticamente - esperar que el host presione el botón
-        console.log('✅ All players answered, waiting for host to advance')
-      }
-    } else {
-      // Esperar a que otros respondan
+      }).then(() => {
+        console.log(`✅ [${player.name}] Answer sent to other players`)
+      }).catch((err) => {
+        console.error('Error sending answer:', err)
+      })
+    } catch (err) {
+      console.error('Error in answer sync:', err)
+    }
+    
+    // Verificar si todos los jugadores conectados han respondido
+    const totalConnectedPlayers = players.filter(p => p.id).length // Solo jugadores con ID válido
+    const answeredPlayers = Object.keys(newPlayerAnswers).filter(id => newPlayerAnswers[id] !== null).length
+    
+    console.log(`📊 [${player.name}] Progreso respuestas: ${answeredPlayers}/${totalConnectedPlayers} jugadores conectados`)
+    console.log(`📊 [${player.name}] Jugadores en sala:`, players.map(p => `${p.name}(${p.id})`))
+    console.log(`📊 [${player.name}] Respuestas recibidas:`, Object.keys(newPlayerAnswers))
+    
+    // La verificación de "todos han respondido" ahora se maneja en el useEffect
+    // para incluir respuestas que llegan de otros jugadores via Real-time
+    if (answeredPlayers < totalConnectedPlayers) {
+      // Aún esperando respuestas de otros jugadores
       setWaitingForPlayers(true)
+      console.log(`⏳ [${player.name}] Waiting for other players to answer`)
     }
   }
 
@@ -1065,7 +1133,7 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
                       Esperando respuestas...
                     </p>
                     <p className="text-blue-600 text-sm">
-                      {Object.keys(playerAnswers).filter(id => playerAnswers[id] !== null).length} de {players.length} jugadores han respondido
+                      {Object.keys(playerAnswers).filter(id => playerAnswers[id] !== null).length} de {players.filter(p => p.id).length} jugadores han respondido
                     </p>
                   </div>
                 ) : showAnswer && (
