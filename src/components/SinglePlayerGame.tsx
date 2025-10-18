@@ -47,8 +47,8 @@ const SinglePlayerGame: React.FC<SinglePlayerGameProps> = ({
   const [gameState, setGameState] = useState<'select' | 'playing' | 'results' | 'leaderboard' | 'name-input'>('select')
   
   // Estados para sesiones QR
-  const [playerName, setPlayerName] = useState(initialPlayerName || '')
-  const [savingResults, setSavingResults] = useState(false)
+  const [playerName] = useState(initialPlayerName || '')
+  const [, setSavingResults] = useState(false)
   
   // Estados del juego
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null)
@@ -66,6 +66,89 @@ const SinglePlayerGame: React.FC<SinglePlayerGameProps> = ({
   
   // Estados de la UI
   // const [loading, setLoading] = useState(false) // Currently unused
+
+  const calculateResults = (): GameResult => {
+    const totalQuestions = selectedGame?.questions?.length || 0
+    const correctAnswers = answers.filter(a => a.isCorrect).length
+    const totalPoints = answers.reduce((sum, a) => sum + a.pointsEarned, 0)
+    const timeSpent = Math.round((Date.now() - gameStartTime) / 1000)
+    const accuracy = totalQuestions > 0 ? (correctAnswers / totalQuestions) * 100 : 0
+
+    return {
+      totalQuestions,
+      correctAnswers,
+      totalPoints,
+      timeSpent,
+      accuracy: Math.round(accuracy)
+    }
+  }
+
+  // Función para guardar resultados de sesión QR
+  const saveQRResults = useCallback(async (name: string) => {
+    if (!isQRSession || !qrSessionId || !selectedGame) {
+      console.log('Cannot save QR results - missing data:', { isQRSession, qrSessionId, selectedGame })
+      return
+    }
+    
+    setSavingResults(true)
+    try {
+      const results = calculateResults()
+      const avgTime = answers.length > 0 
+        ? answers.reduce((sum, a) => sum + a.timeToAnswer, 0) / answers.length / 1000 
+        : 0
+
+      const gameData = {
+        game_title: selectedGame.title,
+        answers: answers,
+        completed_at: new Date().toISOString()
+      }
+
+      console.log('Saving QR results:', {
+        qrSessionId,
+        playerName: name.trim(),
+        totalPoints: results.totalPoints,
+        totalCorrect: results.correctAnswers,
+        totalQuestions: results.totalQuestions,
+        avgTime,
+        gameData
+      })
+
+      const { error } = await qrResultsHelpers.saveQRSessionResult(
+        qrSessionId,
+        name.trim(),
+        results.totalPoints,
+        results.correctAnswers,
+        results.totalQuestions,
+        avgTime,
+        gameData
+      )
+
+      if (error) {
+        console.error('Error saving QR results:', error)
+        
+        // Verificar si es un error de tabla no encontrada
+        if (error.code === '42P01') {
+          alert('Error: La tabla de resultados no existe. Por favor ejecuta la migración de base de datos antes de jugar.')
+        } else {
+          alert(`Error al guardar resultados: ${error.message}. Puedes continuar viendo tus puntos.`)
+        }
+      } else {
+        console.log('QR results saved successfully!')
+      }
+    } catch (err) {
+      console.error('Unexpected error saving QR results:', err)
+      alert('Error inesperado al guardar resultados. Puedes continuar viendo tus puntos.')
+    } finally {
+      setSavingResults(false)
+    }
+  }, [isQRSession, qrSessionId, selectedGame, answers, calculateResults])
+
+  // Manejar guardado automático para sesión QR
+  const handleAutoSaveQRResults = useCallback(async () => {
+    if (isQRSession && qrSessionId && playerName.trim()) {
+      await saveQRResults(playerName)
+    }
+  }, [isQRSession, qrSessionId, playerName, saveQRResults])
 
   // Si es sesión QR y tenemos juego, ir directo a selección
   useEffect(() => {
@@ -276,22 +359,6 @@ const SinglePlayerGame: React.FC<SinglePlayerGameProps> = ({
     setQuestionStartTime(Date.now())
   }
 
-  const calculateResults = (): GameResult => {
-    const totalQuestions = selectedGame?.questions?.length || 0
-    const correctAnswers = answers.filter(a => a.isCorrect).length
-    const totalPoints = answers.reduce((sum, a) => sum + a.pointsEarned, 0)
-    const timeSpent = Math.round((Date.now() - gameStartTime) / 1000)
-    const accuracy = totalQuestions > 0 ? (correctAnswers / totalQuestions) * 100 : 0
-
-    return {
-      totalQuestions,
-      correctAnswers,
-      totalPoints,
-      timeSpent,
-      accuracy: Math.round(accuracy)
-    }
-  }
-
   const handlePlayAgain = () => {
     // Re-mezclar las preguntas para el nuevo juego
     if (selectedGame?.questions) {
@@ -306,73 +373,6 @@ const SinglePlayerGame: React.FC<SinglePlayerGameProps> = ({
     setSelectedGame(null)
     setGameState('select')
   }
-
-  // Función para guardar resultados de sesión QR
-  const saveQRResults = useCallback(async (name: string) => {
-    if (!isQRSession || !qrSessionId || !selectedGame) {
-      console.log('Cannot save QR results - missing data:', { isQRSession, qrSessionId, selectedGame })
-      return
-    }
-    
-    setSavingResults(true)
-    try {
-      const results = calculateResults()
-      const avgTime = answers.length > 0 
-        ? answers.reduce((sum, a) => sum + a.timeToAnswer, 0) / answers.length / 1000 
-        : 0
-
-      const gameData = {
-        game_title: selectedGame.title,
-        answers: answers,
-        completed_at: new Date().toISOString()
-      }
-
-      console.log('Saving QR results:', {
-        qrSessionId,
-        playerName: name.trim(),
-        totalPoints: results.totalPoints,
-        totalCorrect: results.correctAnswers,
-        totalQuestions: results.totalQuestions,
-        avgTime,
-        gameData
-      })
-
-      const { error } = await qrResultsHelpers.saveQRSessionResult(
-        qrSessionId,
-        name.trim(),
-        results.totalPoints,
-        results.correctAnswers,
-        results.totalQuestions,
-        avgTime,
-        gameData
-      )
-
-      if (error) {
-        console.error('Error saving QR results:', error)
-        
-        // Verificar si es un error de tabla no encontrada
-        if (error.code === '42P01') {
-          alert('Error: La tabla de resultados no existe. Por favor ejecuta la migración de base de datos antes de jugar.')
-        } else {
-          alert(`Error al guardar resultados: ${error.message}. Puedes continuar viendo tus puntos.`)
-        }
-      } else {
-        console.log('QR results saved successfully!')
-      }
-    } catch (err) {
-      console.error('Unexpected error saving QR results:', err)
-      alert('Error inesperado al guardar resultados. Puedes continuar viendo tus puntos.')
-    } finally {
-      setSavingResults(false)
-    }
-  }, [isQRSession, qrSessionId, selectedGame, answers, calculateResults, qrResultsHelpers])
-
-  // Manejar guardado automático para sesión QR
-  const handleAutoSaveQRResults = useCallback(async () => {
-    if (isQRSession && qrSessionId && playerName.trim()) {
-      await saveQRResults(playerName)
-    }
-  }, [isQRSession, qrSessionId, playerName, saveQRResults])
 
   // Manejar mostrar leaderboard
   const handleShowLeaderboard = () => {
