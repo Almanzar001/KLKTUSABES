@@ -203,7 +203,8 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
           timeLeft: newTimeLeft, 
           showAnswer: newShowAnswer,
           gameEnded,
-          timestamp 
+          timestamp,
+          questionStartTime: syncedStartTime // Timestamp sincronizado del host
         } = event.data
         
         console.log(`🔄 [${player.name}] Current state: Q${currentQuestionIndex}, New state: Q${questionIndex}`)
@@ -240,7 +241,15 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
           setPlayerAnswers({}) // Limpiar respuestas anteriores
           setPlayerAnswerTimes({}) // Limpiar tiempos de respuesta
           setHasTimedOut(false) // Resetear estado de timeout
-          setQuestionStartTime(Date.now()) // Reiniciar tiempo de pregunta
+          
+          // Usar el questionStartTime sincronizado del host si está disponible
+          if (syncedStartTime) {
+            console.log(`⏰ [${player.name}] Using synced start time from host: ${syncedStartTime}`)
+            setQuestionStartTime(syncedStartTime)
+          } else {
+            console.log(`⏰ [${player.name}] No synced start time, using current time`)
+            setQuestionStartTime(Date.now())
+          }
         }
         
         setWaitingForPlayers(false)
@@ -299,7 +308,8 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
           timeLeft: newTimeLeft, 
           showAnswer: newShowAnswer,
           gameEnded,
-          timestamp 
+          timestamp,
+          questionStartTime: syncedStartTime // Timestamp sincronizado del host
         } = data
         
         console.log(`🔄 [${player.name}] Supabase sync: Q${currentQuestionIndex} → Q${questionIndex}`)
@@ -336,7 +346,15 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
           setPlayerAnswers({})
           setPlayerAnswerTimes({})
           setHasTimedOut(false)
-          setQuestionStartTime(Date.now())
+          
+          // Usar el questionStartTime sincronizado del host si está disponible
+          if (syncedStartTime) {
+            console.log(`⏰ [${player.name}] Supabase: Using synced start time from host: ${syncedStartTime}`)
+            setQuestionStartTime(syncedStartTime)
+          } else {
+            console.log(`⏰ [${player.name}] Supabase: No synced start time, using current time`)
+            setQuestionStartTime(Date.now())
+          }
         }
         
         setWaitingForPlayers(false)
@@ -441,14 +459,25 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
     // Puntos base por respuesta correcta
     const basePoints = 500
     
+    // Convertir timeLimit a milisegundos
+    const timeLimitMs = timeLimit * 1000
+    
     // Puntos bonus por velocidad (máximo 500 puntos adicionales)
     // Fórmula: bonus = 500 * (tiempo restante / tiempo límite)
     // Respuesta instantánea = 500 bonus, respuesta al final = 0 bonus
-    const timeBonus = Math.floor(500 * ((timeLimit * 1000 - answerTime) / (timeLimit * 1000)))
+    const timeRemaining = timeLimitMs - answerTime
+    const timeBonus = Math.floor(500 * (timeRemaining / timeLimitMs))
     
     const totalPoints = basePoints + Math.max(0, timeBonus)
     
-    console.log(`💯 Points calculation: base=${basePoints}, timeBonus=${timeBonus}, total=${totalPoints}`)
+    console.log(`💯 Points calculation:`)
+    console.log(`   - Time limit: ${timeLimit}s (${timeLimitMs}ms)`)
+    console.log(`   - Answer time: ${answerTime}ms (${(answerTime/1000).toFixed(2)}s)`)
+    console.log(`   - Time remaining: ${timeRemaining}ms`)
+    console.log(`   - Base points: ${basePoints}`)
+    console.log(`   - Time bonus: ${timeBonus}`)
+    console.log(`   - Total points: ${totalPoints}`)
+    
     return totalPoints
   }
 
@@ -459,6 +488,8 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
       const timeLimit = currentQuestion.time_limit || 30
       
       console.log('📊 Calculating results for question:', currentQuestionIndex)
+      console.log('📊 Player answers:', playerAnswers)
+      console.log('📊 Player answer times:', playerAnswerTimes)
       
       setGameResults(prevResults => {
         const newResults = { ...prevResults }
@@ -472,6 +503,14 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
           const answerTime = playerAnswerTimes[p.id] || (timeLimit * 1000) // Si no hay tiempo, usar el límite
           const isCorrect = playerAnswer === currentQuestion.correct_answer
           
+          console.log(`📊 Player ${p.name}:`, {
+            answer: playerAnswer,
+            answerTime: answerTime,
+            answerTimeSeconds: (answerTime / 1000).toFixed(2),
+            correctAnswer: currentQuestion.correct_answer,
+            isCorrect
+          })
+          
           // Solo actualizar si esta pregunta no se ha contado aún
           if (newResults[p.id].total <= currentQuestionIndex) {
             newResults[p.id].total += 1
@@ -480,6 +519,8 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
               const points = calculatePoints(isCorrect, timeLimit, answerTime)
               newResults[p.id].score += points
               console.log(`📊 Player ${p.name}: +${points} points (total: ${newResults[p.id].score})`)
+            } else {
+              console.log(`📊 Player ${p.name}: 0 points (incorrect answer)`)
             }
           }
         })
@@ -950,7 +991,10 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
       setTimeLeft(newTimeLimit)
       setGameState('question')
       setHasTimedOut(false) // Resetear estado de timeout
-      setQuestionStartTime(Date.now()) // Iniciar cronómetro para nueva pregunta
+      
+      // Iniciar cronómetro para nueva pregunta y guardarlo para sincronización
+      const newQuestionStartTime = Date.now()
+      setQuestionStartTime(newQuestionStartTime)
       
       // SINCRONIZAR con todos los participantes si soy el host (múltiples intentos para garantizar llegada)
       if (player.is_host) {
@@ -963,7 +1007,8 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
           timeLeft: newTimeLimit,
           showAnswer: false,
           timestamp: Date.now(),
-          totalQuestions: currentGame.questions.length
+          totalQuestions: currentGame.questions.length,
+          questionStartTime: newQuestionStartTime // Enviar tiempo de inicio sincronizado
         }
         
         console.log(`🎯 [HOST-${player.name}] Broadcast message:`, broadcastMessage)
