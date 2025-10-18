@@ -1,36 +1,64 @@
-# Migración de Base de Datos - QR Sessions
+# 🚨 SOLUCIÓN: Errores de QR Leaderboard y Resultados
 
-## Problema Identificado
-Al intentar crear sesiones QR, se produce un error porque la tabla `qr_game_sessions` no tiene las columnas `max_participants` y `expires_at` que se agregaron recientemente.
+## Problemas Identificados
 
-## Solución
-
-### Opción 1: Ejecutar Script de Migración (Recomendado)
-Si ya tienes una base de datos existente con datos, ejecuta este script en tu Supabase SQL Editor:
-
-```sql
--- Ejecutar el contenido de add_qr_session_fields.sql
+### ❌ Error 1: "Could not find the table 'qr_session_results'"
+```
+POST .../qr_session_results 404 (Not Found)
+Error: Could not find the table 'public.qr_session_results' in the schema cache
 ```
 
-### Opción 2: Recrear Base de Datos Completa
-Si no tienes datos importantes, puedes ejecutar el script completo actualizado:
-
-```sql
--- Ejecutar el contenido completo de setup_complete_database.sql
+### ❌ Error 2: Campos faltantes en qr_game_sessions
+```
+Error al crear la sesión QR
 ```
 
-## Verificación
-Después de aplicar la migración, verifica que las columnas se agregaron correctamente:
+## 🔧 Solución Inmediata
 
+### PASO 1: Verificar Estado Actual
+Ve a tu **Supabase SQL Editor** y ejecuta:
 ```sql
-SELECT column_name, data_type, column_default 
-FROM information_schema.columns 
-WHERE table_name = 'qr_game_sessions' 
-AND column_name IN ('max_participants', 'expires_at');
+-- Copiar y pegar el contenido de verify_qr_tables.sql
 ```
 
-## Campos Agregados
-- `max_participants INTEGER DEFAULT 50` - Límite máximo de participantes
-- `expires_at TIMESTAMP WITH TIME ZONE DEFAULT (NOW() + INTERVAL '24 hours')` - Fecha de expiración
+### PASO 2: Aplicar Migración Completa
+En el **Supabase SQL Editor**, ejecuta:
+```sql
+-- Copiar y pegar TODO el contenido de add_qr_session_fields.sql
+```
 
-Una vez aplicada la migración, las sesiones QR se podrán crear correctamente con las nuevas funcionalidades.
+## 📋 Lo que hace la migración:
+
+### ✅ Crea tabla qr_session_results
+- Almacena puntuaciones de jugadores QR
+- Configura políticas RLS para acceso público
+- Crea índices para rendimiento
+
+### ✅ Agrega campos a qr_game_sessions
+- `max_participants` - Límite de participantes
+- `expires_at` - Fecha de expiración
+
+### ✅ Configura permisos
+- Lectura pública para leaderboards
+- Inserción sin autenticación para QR
+
+## 🎯 Después de la migración:
+
+1. **Crear sesión QR** ✅ Funcionará
+2. **Guardar resultados** ✅ Funcionará  
+3. **Ver leaderboard** ✅ Funcionará
+4. **Límites de participantes** ✅ Funcionará
+
+## 🔍 Verificación Final
+Ejecuta en SQL Editor:
+```sql
+SELECT 
+    (SELECT COUNT(*) FROM qr_game_sessions) as sesiones,
+    (SELECT COUNT(*) FROM qr_session_results) as resultados,
+    'Migración exitosa' as status;
+```
+
+## ⚠️ Importante
+- **NO elimines** datos existentes
+- **SÍ ejecuta** la migración completa de una vez
+- **REFRESCA** la página después de la migración

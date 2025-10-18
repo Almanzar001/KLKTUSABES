@@ -305,7 +305,10 @@ const SinglePlayerGame: React.FC<SinglePlayerGameProps> = ({
 
   // Función para guardar resultados de sesión QR
   const saveQRResults = async (name: string) => {
-    if (!isQRSession || !qrSessionId || !selectedGame) return
+    if (!isQRSession || !qrSessionId || !selectedGame) {
+      console.log('Cannot save QR results - missing data:', { isQRSession, qrSessionId, selectedGame })
+      return
+    }
     
     setSavingResults(true)
     try {
@@ -320,6 +323,16 @@ const SinglePlayerGame: React.FC<SinglePlayerGameProps> = ({
         completed_at: new Date().toISOString()
       }
 
+      console.log('Saving QR results:', {
+        qrSessionId,
+        playerName: name.trim(),
+        totalPoints: results.totalPoints,
+        totalCorrect: results.correctAnswers,
+        totalQuestions: results.totalQuestions,
+        avgTime,
+        gameData
+      })
+
       const { error } = await qrResultsHelpers.saveQRSessionResult(
         qrSessionId,
         name.trim(),
@@ -332,11 +345,19 @@ const SinglePlayerGame: React.FC<SinglePlayerGameProps> = ({
 
       if (error) {
         console.error('Error saving QR results:', error)
-        // En caso de error, permitir continuar pero mostrar mensaje
-        alert('Error al guardar resultados, pero puedes continuar viendo tus puntos')
+        
+        // Verificar si es un error de tabla no encontrada
+        if (error.code === '42P01') {
+          alert('Error: La tabla de resultados no existe. Por favor ejecuta la migración de base de datos antes de jugar.')
+        } else {
+          alert(`Error al guardar resultados: ${error.message}. Puedes continuar viendo tus puntos.`)
+        }
+      } else {
+        console.log('QR results saved successfully!')
       }
     } catch (err) {
-      console.error('Error:', err)
+      console.error('Unexpected error saving QR results:', err)
+      alert('Error inesperado al guardar resultados. Puedes continuar viendo tus puntos.')
     } finally {
       setSavingResults(false)
     }

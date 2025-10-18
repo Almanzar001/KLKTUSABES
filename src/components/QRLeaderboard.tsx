@@ -35,6 +35,8 @@ const QRLeaderboard: React.FC<QRLeaderboardProps> = ({
       setLoading(true)
       setError(null)
 
+      console.log('Fetching leaderboard for QR session:', qrSessionId)
+
       const { data, error: fetchError } = await supabase
         .from('qr_session_results')
         .select('*')
@@ -43,9 +45,17 @@ const QRLeaderboard: React.FC<QRLeaderboardProps> = ({
         .order('avg_time', { ascending: true })
         .limit(10)
 
+      console.log('Leaderboard fetch result:', { data, fetchError })
+
       if (fetchError) {
         console.error('Error fetching leaderboard:', fetchError)
-        setError('Error al cargar el leaderboard')
+        
+        // Verificar si es un error de tabla no encontrada
+        if (fetchError.code === '42P01') {
+          setError('La tabla de resultados no existe. Por favor ejecuta la migración de base de datos.')
+        } else {
+          setError(`Error al cargar el leaderboard: ${fetchError.message}`)
+        }
         return
       }
 
