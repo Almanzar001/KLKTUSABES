@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { ArrowLeft, Users, Crown, Play } from 'lucide-react'
 // import { useAuth } from '../contexts/AuthContext' // Currently unused
 import { roomHelpers, realtimeHelpers, gameHelpers, supabase } from '../supabase'
@@ -379,30 +379,6 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
       setShowAnswer(true)
       setWaitingForPlayers(false)
       
-      // Calcular resultados de esta pregunta
-      if (currentGame?.questions?.[currentQuestionIndex]) {
-        const currentQuestion = currentGame.questions[currentQuestionIndex]
-        const newResults = { ...gameResults }
-        
-        players.forEach(p => {
-          if (!newResults[p.id]) {
-            newResults[p.id] = { correct: 0, total: 0, score: 0 }
-          }
-          
-          const playerAnswer = playerAnswers[p.id]
-          const isCorrect = playerAnswer === currentQuestion.correct_answer
-          
-          newResults[p.id].total += 1
-          if (isCorrect) {
-            newResults[p.id].correct += 1
-            newResults[p.id].score += 100 // 100 puntos por respuesta correcta
-          }
-        })
-        
-        setGameResults(newResults)
-        console.log('📊 Updated game results:', newResults)
-      }
-      
       // Solo el host sincroniza el estado de "mostrar respuestas"
       if (player.is_host) {
         console.log(`📡 [HOST-${player.name}] Broadcasting show answer state to all players`)
@@ -434,6 +410,40 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
       }
     }
   }, [playerAnswers, players, gameState, showAnswer, currentQuestionIndex, timeLeft, player.is_host, player.name, room.id])
+
+  // Calcular resultados cuando se muestren las respuestas (sin incluir gameResults en dependencias para evitar loops)
+  useEffect(() => {
+    if (showAnswer && gameState === 'question' && currentGame?.questions?.[currentQuestionIndex]) {
+      const currentQuestion = currentGame.questions[currentQuestionIndex]
+      
+      console.log('📊 Calculating results for question:', currentQuestionIndex)
+      
+      setGameResults(prevResults => {
+        const newResults = { ...prevResults }
+        
+        players.forEach(p => {
+          if (!newResults[p.id]) {
+            newResults[p.id] = { correct: 0, total: 0, score: 0 }
+          }
+          
+          const playerAnswer = playerAnswers[p.id]
+          const isCorrect = playerAnswer === currentQuestion.correct_answer
+          
+          // Solo actualizar si esta pregunta no se ha contado aún
+          if (newResults[p.id].total <= currentQuestionIndex) {
+            newResults[p.id].total += 1
+            if (isCorrect) {
+              newResults[p.id].correct += 1
+              newResults[p.id].score += 100 // 100 puntos por respuesta correcta
+            }
+          }
+        })
+        
+        console.log('📊 Updated game results:', newResults)
+        return newResults
+      })
+    }
+  }, [showAnswer, gameState, currentQuestionIndex, currentGame, players, playerAnswers])
 
   // Efecto especial para el host: iniciar el juego automáticamente si ya tiene los datos
   useEffect(() => {
@@ -517,7 +527,7 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
     }, 1000)
 
     return () => clearInterval(interval)
-  }, [gameState, showAnswer, playTick, player.is_host, currentQuestionIndex, selectedAnswer])
+  }, [gameState, showAnswer, playTick, player.is_host, currentQuestionIndex, selectedAnswer, room.id])
 
   const loadPlayers = async () => {
     try {
@@ -712,7 +722,7 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
   }
 
 
-  const handleAnswerSelect = (answerIndex: number) => {
+  const handleAnswerSelect = useCallback((answerIndex: number) => {
     if (selectedAnswer !== null || showAnswer || waitingForPlayers) return
 
     console.log(`📝 [${player.name}] Player selected answer: ${answerIndex}`)
@@ -776,9 +786,9 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
       setWaitingForPlayers(true)
       console.log(`⏳ [${player.name}] Waiting for other players to answer`)
     }
-  }
+  }, [selectedAnswer, showAnswer, waitingForPlayers, player.name, player.id, currentGame, currentQuestionIndex, playerAnswers, playCorrect, playIncorrect, room.id, players])
 
-  const handleTimeUp = () => {
+  const handleTimeUp = useCallback(() => {
     if (showAnswer) return
     
     console.log(`⏰ [${player.name}] handleTimeUp called - selectedAnswer: ${selectedAnswer}`)
@@ -850,7 +860,7 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
     }
     
     // TODO: Registrar respuesta por tiempo agotado
-  }
+  }, [showAnswer, selectedAnswer, player.name, player.is_host, playTimeUp, room.id, currentQuestionIndex, timeLeft])
 
   const handleNextQuestion = () => {
     if (!currentGame?.questions) return
