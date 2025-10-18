@@ -41,6 +41,8 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
   const [playerAnswers, setPlayerAnswers] = useState<{[playerId: string]: number | null}>({})
   const [waitingForPlayers, setWaitingForPlayers] = useState(false)
   const [lastSyncTimestamp, setLastSyncTimestamp] = useState(0)
+  const [hasTimedOut, setHasTimedOut] = useState(false)
+  const [gameResults, setGameResults] = useState<{[playerId: string]: {correct: number, total: number, score: number}}>({})  
   
   // Estados de la UI
   const [loading, setLoading] = useState(false)
@@ -233,6 +235,7 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
         setPlayerAnswers({}) // Limpiar respuestas anteriores
         setWaitingForPlayers(false)
         setError(null)
+        setHasTimedOut(false) // Resetear estado de timeout
         
         console.log(`✅ [${player.name}] Participant synced to question ${questionIndex + 1}, timeLeft: ${newTimeLeft}s`)
       }
@@ -320,6 +323,7 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
         setSelectedAnswer(null)
         setPlayerAnswers({})
         setWaitingForPlayers(false)
+        setHasTimedOut(false)
         setError(null)
         
         console.log(`✅ [${player.name}] Supabase sync completed to question ${questionIndex + 1}, timeLeft: ${newTimeLeft}s`)
@@ -374,6 +378,30 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
       console.log(`🎯 [${player.name}] All players have answered! Showing answers.`)
       setShowAnswer(true)
       setWaitingForPlayers(false)
+      
+      // Calcular resultados de esta pregunta
+      if (currentGame?.questions?.[currentQuestionIndex]) {
+        const currentQuestion = currentGame.questions[currentQuestionIndex]
+        const newResults = { ...gameResults }
+        
+        players.forEach(p => {
+          if (!newResults[p.id]) {
+            newResults[p.id] = { correct: 0, total: 0, score: 0 }
+          }
+          
+          const playerAnswer = playerAnswers[p.id]
+          const isCorrect = playerAnswer === currentQuestion.correct_answer
+          
+          newResults[p.id].total += 1
+          if (isCorrect) {
+            newResults[p.id].correct += 1
+            newResults[p.id].score += 100 // 100 puntos por respuesta correcta
+          }
+        })
+        
+        setGameResults(newResults)
+        console.log('📊 Updated game results:', newResults)
+      }
       
       // Solo el host sincroniza el estado de "mostrar respuestas"
       if (player.is_host) {
@@ -759,6 +787,7 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
     if (selectedAnswer === null) {
       console.log(`⏰ [${player.name}] Player didn't answer, playing time up sound`)
       playTimeUp()
+      setHasTimedOut(true) // Marcar que hubo timeout específicamente
       
       setPlayerAnswers(prev => ({
         ...prev,
@@ -839,6 +868,7 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
       setWaitingForPlayers(false)
       setTimeLeft(newTimeLimit)
       setGameState('question')
+      setHasTimedOut(false) // Resetear estado de timeout
       
       // SINCRONIZAR con todos los participantes si soy el host (múltiples intentos para garantizar llegada)
       if (player.is_host) {
@@ -1213,7 +1243,7 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
                 }`}>
                   {selectedAnswer === currentQuestion.correct_answer 
                     ? '¡Correcto!' 
-                    : selectedAnswer === null 
+                    : hasTimedOut && selectedAnswer === null
                     ? '¡Tiempo Agotado!' 
                     : '¡Incorrecto!'
                   }
@@ -1261,21 +1291,188 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
 
   // Renderizar resultados
   if (roomState === 'results') {
+    // Calcular leaderboard basado en gameResults
+    const leaderboard = players
+      .map(p => {
+        const playerResults = gameResults[p.id] || { correct: 0, total: 0, score: 0 }
+        const accuracy = playerResults.total > 0 ? Math.round((playerResults.correct / playerResults.total) * 100) : 0
+        
+        return {
+          ...p,
+          finalScore: playerResults.score,
+          correctAnswers: playerResults.correct,
+          totalQuestions: playerResults.total,
+          accuracy: accuracy,
+          rank: 0
+        }
+      })
+      .sort((a, b) => {
+        // Ordenar por puntuación, luego por precisión, luego por nombre
+        if (b.finalScore !== a.finalScore) return b.finalScore - a.finalScore
+        if (b.accuracy !== a.accuracy) return b.accuracy - a.accuracy
+        return a.name.localeCompare(b.name)
+      })
+      .map((p, index) => ({ ...p, rank: index + 1 }))
+
+    const currentPlayerRank = leaderboard.find(p => p.id === player.id)?.rank || 0
+
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <h2 className="text-3xl font-bold text-gray-800 mb-4">
-            ¡Juego Terminado!
-          </h2>
-          <p className="text-gray-600 mb-8">
-            Tabla de posiciones próximamente...
-          </p>
-          <button
-            onClick={onBack}
-            className="btn-dominican-primary"
-          >
-            Volver al Inicio
-          </button>
+      <div className="min-h-screen bg-gray-50">
+        {/* Header */}
+        <div className="bg-white shadow-sm">
+          <div className="max-w-4xl mx-auto px-6 py-4">
+            <div className="flex items-center gap-4">
+              <button
+                onClick={onBack}
+                className="text-dominican-blue hover:text-dominican-blue-light"
+              >
+                <ArrowLeft className="w-6 h-6" />
+              </button>
+              <div className="flex-1">
+                <h1 className="text-2xl font-bold text-gray-800">Resultados Finales</h1>
+                <p className="text-gray-600">{room.name} - {currentGame?.title}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="max-w-4xl mx-auto px-6 py-8">
+          {/* Podio de ganadores */}
+          {leaderboard.length > 0 && (
+            <div className="bg-white rounded-xl shadow-lg p-8 mb-8">
+              <div className="text-center mb-8">
+                <h2 className="text-3xl font-bold text-gray-800 mb-2">¡Juego Terminado!</h2>
+                <p className="text-gray-600">Felicitaciones a todos los participantes</p>
+              </div>
+
+              {/* Top 3 */}
+              <div className="flex justify-center items-end gap-8 mb-8">
+                {/* Segundo lugar */}
+                {leaderboard[1] && (
+                  <div className="text-center">
+                    <div className="w-20 h-20 bg-gray-200 rounded-full flex items-center justify-center mb-3">
+                      <span className="text-2xl">{leaderboard[1].avatar}</span>
+                    </div>
+                    <div className="bg-gray-100 rounded-lg px-4 py-6">
+                      <div className="text-2xl font-bold text-gray-600 mb-1">2°</div>
+                      <div className="font-semibold text-gray-800">{leaderboard[1].name}</div>
+                      <div className="text-lg text-gray-600">{leaderboard[1].finalScore} pts</div>
+                      <div className="text-sm text-gray-500">{leaderboard[1].accuracy}% precisión</div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Primer lugar */}
+                {leaderboard[0] && (
+                  <div className="text-center">
+                    <div className="w-24 h-24 bg-yellow-200 rounded-full flex items-center justify-center mb-3 ring-4 ring-yellow-400">
+                      <span className="text-3xl">{leaderboard[0].avatar}</span>
+                    </div>
+                    <div className="bg-gradient-to-b from-yellow-100 to-yellow-200 rounded-lg px-6 py-8">
+                      <Crown className="w-8 h-8 text-yellow-600 mx-auto mb-2" />
+                      <div className="text-3xl font-bold text-yellow-600 mb-1">1°</div>
+                      <div className="font-bold text-gray-800">{leaderboard[0].name}</div>
+                      <div className="text-xl text-yellow-700">{leaderboard[0].finalScore} pts</div>
+                      <div className="text-sm text-yellow-600">{leaderboard[0].accuracy}% precisión</div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Tercer lugar */}
+                {leaderboard[2] && (
+                  <div className="text-center">
+                    <div className="w-20 h-20 bg-orange-200 rounded-full flex items-center justify-center mb-3">
+                      <span className="text-2xl">{leaderboard[2].avatar}</span>
+                    </div>
+                    <div className="bg-orange-100 rounded-lg px-4 py-6">
+                      <div className="text-2xl font-bold text-orange-600 mb-1">3°</div>
+                      <div className="font-semibold text-gray-800">{leaderboard[2].name}</div>
+                      <div className="text-lg text-orange-600">{leaderboard[2].finalScore} pts</div>
+                      <div className="text-sm text-orange-500">{leaderboard[2].accuracy}% precisión</div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Tu posición */}
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6 text-center">
+                <p className="text-blue-800 font-semibold">
+                  Tu posición: #{currentPlayerRank} de {leaderboard.length} jugadores
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Tabla completa */}
+          <div className="bg-white rounded-xl shadow-lg overflow-hidden">
+            <div className="p-6 bg-gradient-to-r from-purple-600 to-blue-600 text-white">
+              <h3 className="text-xl font-bold">Clasificación Final</h3>
+              <p className="text-purple-100">Todos los participantes</p>
+            </div>
+
+            <div className="p-6 space-y-3">
+              {leaderboard.map((p, index) => {
+                const isCurrentPlayer = p.id === player.id
+                return (
+                  <div
+                    key={p.id}
+                    className={`flex items-center gap-4 p-4 rounded-lg border-2 transition-all ${
+                      isCurrentPlayer 
+                        ? 'border-blue-300 bg-blue-50 ring-2 ring-blue-200' 
+                        : index < 3 
+                        ? 'border-yellow-200 bg-yellow-50'
+                        : 'border-gray-200 bg-white hover:bg-gray-50'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold ${
+                        index === 0 ? 'bg-yellow-500 text-white' :
+                        index === 1 ? 'bg-gray-400 text-white' :
+                        index === 2 ? 'bg-orange-500 text-white' :
+                        'bg-gray-200 text-gray-700'
+                      }`}>
+                        {p.rank}
+                      </div>
+                      <div className="w-12 h-12 bg-gray-200 rounded-full flex items-center justify-center">
+                        <span className="text-lg">{p.avatar}</span>
+                      </div>
+                    </div>
+                    
+                    <div className="flex-1">
+                      <h4 className="font-semibold text-gray-800">
+                        {p.name}
+                        {isCurrentPlayer && (
+                          <span className="ml-2 text-xs bg-blue-600 text-white px-2 py-1 rounded-full">
+                            Tú
+                          </span>
+                        )}
+                      </h4>
+                      <p className="text-sm text-gray-600">
+                        {p.correctAnswers}/{p.totalQuestions} correctas ({p.accuracy}%)
+                      </p>
+                    </div>
+                    
+                    <div className="text-right">
+                      <div className="text-2xl font-bold text-gray-800">
+                        {p.finalScore}
+                      </div>
+                      <div className="text-xs text-gray-500">puntos</div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Acciones finales */}
+          <div className="mt-8 flex gap-4 justify-center">
+            <button
+              onClick={onBack}
+              className="btn-dominican-primary px-8 py-3"
+            >
+              Volver al Inicio
+            </button>
+          </div>
         </div>
       </div>
     )
