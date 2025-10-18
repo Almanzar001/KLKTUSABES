@@ -107,6 +107,30 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
             }
           }
         }
+        
+        // RESPALDO: Detectar cambios en current_question_index como sincronización alternativa
+        if (!player.is_host && payload.new?.current_question_index !== undefined && 
+            payload.new.current_question_index !== room.current_question_index &&
+            roomState === 'playing' && currentGame?.questions) {
+          
+          const newQuestionIndex = payload.new.current_question_index
+          console.log(`🔄 [${player.name}] BACKUP SYNC: Room question index changed to ${newQuestionIndex}`)
+          
+          if (newQuestionIndex >= 0 && newQuestionIndex < currentGame.questions.length) {
+            console.log(`🔄 [${player.name}] BACKUP SYNC: Updating to question ${newQuestionIndex + 1}`)
+            setCurrentQuestionIndex(newQuestionIndex)
+            setGameState('question')
+            setTimeLeft(currentGame.questions[newQuestionIndex].time_limit || 30)
+            setShowAnswer(false)
+            setSelectedAnswer(null)
+            setPlayerAnswers({})
+            setWaitingForPlayers(false)
+            setError(null)
+          }
+        }
+        
+        // Actualizar estado de la sala en todos los casos
+        setRoom(prev => ({ ...prev, ...payload.new }))
       }
     )
 
@@ -147,7 +171,7 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
     const gameChannel = new BroadcastChannel(`game-${room.id}`)
     
     gameChannel.onmessage = (event) => {
-      console.log('📡 Broadcast message received by', player.is_host ? 'HOST' : 'PARTICIPANT', ':', event.data)
+      console.log('📡 Broadcast message received by', player.is_host ? 'HOST' : 'PARTICIPANT', player.name, ':', event.data)
       
       if (event.data.type === 'GAME_DATA' && event.data.game) {
         console.log('✅ Game data received via broadcast:', event.data.game.title, 'Questions:', event.data.game.questions?.length)
@@ -163,7 +187,7 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
       
       // Sincronización de estado de juego (TODOS los jugadores escuchan)
       if (event.data.type === 'GAME_STATE_SYNC' && !player.is_host) {
-        console.log('🔄 Game state sync received:', event.data)
+        console.log(`🔄 [${player.name}] Game state sync received:`, event.data)
         
         const { 
           questionIndex, 
@@ -174,9 +198,11 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
           timestamp 
         } = event.data
         
+        console.log(`🔄 [${player.name}] Current state: Q${currentQuestionIndex}, New state: Q${questionIndex}`)
+        
         // Ignorar mensajes duplicados o antiguos
         if (timestamp && timestamp <= lastSyncTimestamp) {
-          console.log('📝 Ignoring duplicate/old sync message')
+          console.log(`📝 [${player.name}] Ignoring duplicate/old sync message`)
           return
         }
         
@@ -193,6 +219,8 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
         }
         
         // Sincronizar estado solo si no es el host
+        console.log(`🔄 [${player.name}] Syncing: Q${currentQuestionIndex} → Q${questionIndex}, gameState: ${newGameState}, showAnswer: ${newShowAnswer}`)
+        
         setCurrentQuestionIndex(questionIndex)
         setGameState(newGameState)
         setTimeLeft(newTimeLeft)
@@ -202,7 +230,7 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
         setWaitingForPlayers(false)
         setError(null)
         
-        console.log(`✅ Participant synced to question ${questionIndex + 1}`)
+        console.log(`✅ [${player.name}] Participant synced to question ${questionIndex + 1}, timeLeft: ${newTimeLeft}s`)
       }
       
       // Sincronización del temporizador (solo participantes)
@@ -621,7 +649,7 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
       
       // SINCRONIZAR con todos los participantes si soy el host (múltiples intentos para garantizar llegada)
       if (player.is_host) {
-        console.log(`🎯 HOST broadcasting next question: ${nextIndex + 1}`)
+        console.log(`🎯 [HOST-${player.name}] Broadcasting next question: ${nextIndex + 1} of ${currentGame.questions.length}`)
         
         const broadcastMessage = {
           type: 'GAME_STATE_SYNC',
@@ -629,16 +657,41 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
           gameState: 'question',
           timeLeft: newTimeLimit,
           showAnswer: false,
-          timestamp: Date.now()
+          timestamp: Date.now(),
+          totalQuestions: currentGame.questions.length
         }
         
-        // Enviar el mensaje múltiples veces para asegurar llegada
-        for (let i = 0; i < 3; i++) {
+        console.log(`🎯 [HOST-${player.name}] Broadcast message:`, broadcastMessage)
+        
+        // Enviar el mensaje múltiples veces para asegurar llegada con mayor frecuencia
+        for (let i = 0; i < 5; i++) {
           setTimeout(() => {
             const gameChannel = new BroadcastChannel(`game-${room.id}`)
+            console.log(`📤 [HOST-${player.name}] Sending broadcast attempt ${i + 1}/5`)
             gameChannel.postMessage(broadcastMessage)
             setTimeout(() => gameChannel.close(), 100)
-          }, i * 200)
+          }, i * 100) // Reducir tiempo entre intentos a 100ms
+        }
+        
+        // RESPALDO: También actualizar un campo en la base de datos como señal
+        try {
+          console.log(`💾 [HOST-${player.name}] Updating room current_question_index as backup`)
+          supabase
+            .from('rooms')
+            .update({ 
+              current_question_index: nextIndex,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', room.id)
+            .then(({ error }) => {
+              if (error) {
+                console.error('Error updating room question index:', error)
+              } else {
+                console.log(`✅ [HOST-${player.name}] Room question index updated to ${nextIndex}`)
+              }
+            })
+        } catch (err) {
+          console.error('Error in backup sync:', err)
         }
       }
     } else {

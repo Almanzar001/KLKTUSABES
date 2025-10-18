@@ -43,6 +43,7 @@ export interface Room {
   game?: Game
   players?: Player[]
   current_game_data?: Game // Juego completo almacenado en la sala
+  current_question_index?: number // Índice de pregunta actual para sincronización
 }
 
 export interface Player {
