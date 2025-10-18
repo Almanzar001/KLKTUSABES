@@ -231,11 +231,16 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
         setGameState(newGameState)
         setTimeLeft(newTimeLeft)
         setShowAnswer(newShowAnswer)
-        setSelectedAnswer(null) // Resetear respuesta del participante
-        setPlayerAnswers({}) // Limpiar respuestas anteriores
+        
+        // Solo resetear selectedAnswer si es una nueva pregunta (diferente índice)
+        if (questionIndex !== currentQuestionIndex) {
+          setSelectedAnswer(null) // Resetear respuesta del participante
+          setPlayerAnswers({}) // Limpiar respuestas anteriores
+          setHasTimedOut(false) // Resetear estado de timeout
+        }
+        
         setWaitingForPlayers(false)
         setError(null)
-        setHasTimedOut(false) // Resetear estado de timeout
         
         console.log(`✅ [${player.name}] Participant synced to question ${questionIndex + 1}, timeLeft: ${newTimeLeft}s`)
       }
@@ -320,10 +325,15 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
         setGameState(newGameState)
         setTimeLeft(newTimeLeft)
         setShowAnswer(newShowAnswer)
-        setSelectedAnswer(null)
-        setPlayerAnswers({})
+        
+        // Solo resetear selectedAnswer si es una nueva pregunta (diferente índice)
+        if (questionIndex !== currentQuestionIndex) {
+          setSelectedAnswer(null)
+          setPlayerAnswers({})
+          setHasTimedOut(false)
+        }
+        
         setWaitingForPlayers(false)
-        setHasTimedOut(false)
         setError(null)
         
         console.log(`✅ [${player.name}] Supabase sync completed to question ${questionIndex + 1}, timeLeft: ${newTimeLeft}s`)
@@ -1224,40 +1234,56 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
             )}
             
             <div className="grid md:grid-cols-2 gap-4">
-              {currentQuestion.options.map((option, index) => (
-                <button
-                  key={index}
-                  onClick={() => handleAnswerSelect(index)}
-                  disabled={showAnswer}
-                  className={`answer-option ${
-                    showAnswer
-                      ? selectedAnswer === index && selectedAnswer === currentQuestion.correct_answer
-                        ? 'answer-option-correct'
-                        : selectedAnswer === index
-                        ? 'answer-option-incorrect'
+              {currentQuestion.options.map((option, index) => {
+                // Obtener la respuesta del jugador actual (puede estar en selectedAnswer o en playerAnswers)
+                const playerAnswer = selectedAnswer !== null ? selectedAnswer : playerAnswers[player.id]
+                const isPlayerChoice = playerAnswer === index
+                const isCorrect = index === currentQuestion.correct_answer
+                
+                return (
+                  <button
+                    key={index}
+                    onClick={() => handleAnswerSelect(index)}
+                    disabled={showAnswer}
+                    className={`answer-option ${
+                      showAnswer
+                        ? isPlayerChoice && isCorrect
+                          ? 'answer-option-correct'  // Respuesta del jugador Y es correcta
+                          : isPlayerChoice
+                          ? 'answer-option-incorrect' // Respuesta del jugador pero incorrecta
+                          : ''
+                        : isPlayerChoice
+                        ? 'answer-option-selected'
                         : ''
-                      : selectedAnswer === index
-                      ? 'answer-option-selected'
-                      : ''
-                  }`}
-                >
-                  <span>{option}</span>
-                </button>
-              ))}
+                    }`}
+                  >
+                    <span>{option}</span>
+                  </button>
+                )
+              })}
             </div>
 
             {showAnswer && (
               <div className="mt-8 text-center">
-                <div className={`text-2xl font-bold mb-4 ${
-                  selectedAnswer === currentQuestion.correct_answer ? 'text-green-600' : 'text-red-600'
-                }`}>
-                  {selectedAnswer === currentQuestion.correct_answer 
-                    ? '¡Correcto!' 
-                    : hasTimedOut && selectedAnswer === null
-                    ? '¡Tiempo Agotado!' 
-                    : '¡Incorrecto!'
-                  }
-                </div>
+                {(() => {
+                  // Obtener la respuesta del jugador actual de forma más robusta
+                  const playerAnswer = selectedAnswer !== null ? selectedAnswer : playerAnswers[player.id]
+                  const isCorrect = playerAnswer === currentQuestion.correct_answer
+                  const hasAnswered = playerAnswer !== null && playerAnswer !== undefined
+                  
+                  return (
+                    <div className={`text-2xl font-bold mb-4 ${
+                      isCorrect ? 'text-green-600' : 'text-red-600'
+                    }`}>
+                      {isCorrect
+                        ? '¡Correcto!' 
+                        : hasTimedOut && !hasAnswered
+                        ? '¡Tiempo Agotado!' 
+                        : '¡Incorrecto!'
+                      }
+                    </div>
+                  )
+                })()}
                 
                 {/* Controles del host para avanzar */}
                 {player.is_host ? (
