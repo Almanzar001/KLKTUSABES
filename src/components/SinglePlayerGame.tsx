@@ -46,7 +46,6 @@ const SinglePlayerGame: React.FC<SinglePlayerGameProps> = ({
   
   // Estados para sesiones QR
   const [playerName, setPlayerName] = useState('')
-  const [showNameInput, setShowNameInput] = useState(false)
   const [savingResults, setSavingResults] = useState(false)
   
   // Estados del juego
@@ -726,7 +725,6 @@ const SinglePlayerGame: React.FC<SinglePlayerGameProps> = ({
         qrSessionId={qrSessionId}
         sessionTitle={qrSessionTitle || 'Sesión QR'}
         currentPlayerName={playerName}
-        currentPlayerScore={calculateResults().totalPoints}
         onBack={handleBackFromLeaderboard}
         onPlayAgain={handlePlayAgain}
       />

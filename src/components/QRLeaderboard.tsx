@@ -15,7 +15,6 @@ interface QRLeaderboardProps {
   qrSessionId: string
   sessionTitle: string
   currentPlayerName?: string
-  currentPlayerScore?: number
   onBack: () => void
   onPlayAgain?: () => void
 }
@@ -24,7 +23,6 @@ const QRLeaderboard: React.FC<QRLeaderboardProps> = ({
   qrSessionId,
   sessionTitle,
   currentPlayerName,
-  currentPlayerScore,
   onBack,
   onPlayAgain
 }) => {
@@ -206,7 +204,7 @@ const QRLeaderboard: React.FC<QRLeaderboardProps> = ({
                     return (
                       <div
                         key={`${entry.player_name}-${entry.total_score}`}
-                        className={getRankStyle(entry.rank, isCurrentPlayer)}
+                        className={getRankStyle(entry.rank, !!isCurrentPlayer)}
                       >
                         <div className="flex items-center gap-3">
                           {getRankIcon(entry.rank)}
