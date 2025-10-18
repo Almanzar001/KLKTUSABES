@@ -5,6 +5,7 @@ import { roomHelpers, realtimeHelpers, gameHelpers, supabase } from '../supabase
 import { Room, Player, Game } from '../types'
 import { useGameSounds } from '../hooks/useGameSounds'
 import GameSelector from './GameSelector'
+import PlayerAvatar from './PlayerAvatar'
 
 interface MultiplayerRoomProps {
   room: Room
@@ -1172,9 +1173,7 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
                   }`}
                 >
                   <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 bg-gray-300 rounded-full flex items-center justify-center">
-                      <span className="text-lg">{p.avatar}</span>
-                    </div>
+                    <PlayerAvatar avatar={p.avatar} size="md" />
                     <div className="flex-1">
                       <div className="flex items-center gap-2">
                         <span className="font-semibold text-gray-800">{p.name}</span>
@@ -1453,9 +1452,7 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
                             }`}>
                               {index + 1}
                             </div>
-                            <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center">
-                              <span className="text-lg">{p.avatar}</span>
-                            </div>
+                            <PlayerAvatar avatar={p.avatar} size="md" />
                             <div className="flex-1">
                               <h4 className="font-semibold text-gray-800">
                                 {p.name}
@@ -1587,8 +1584,8 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
                 {/* Segundo lugar */}
                 {leaderboard[1] && (
                   <div className="text-center">
-                    <div className="w-20 h-20 bg-gray-200 rounded-full flex items-center justify-center mb-3">
-                      <span className="text-2xl">{leaderboard[1].avatar}</span>
+                    <div className="mb-3">
+                      <PlayerAvatar avatar={leaderboard[1].avatar} size="lg" />
                     </div>
                     <div className="bg-gray-100 rounded-lg px-4 py-6">
                       <div className="text-2xl font-bold text-gray-600 mb-1">2°</div>
@@ -1602,8 +1599,8 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
                 {/* Primer lugar */}
                 {leaderboard[0] && (
                   <div className="text-center">
-                    <div className="w-24 h-24 bg-yellow-200 rounded-full flex items-center justify-center mb-3 ring-4 ring-yellow-400">
-                      <span className="text-3xl">{leaderboard[0].avatar}</span>
+                    <div className="mb-3 ring-4 ring-yellow-400 rounded-full inline-block">
+                      <PlayerAvatar avatar={leaderboard[0].avatar} size="xl" />
                     </div>
                     <div className="bg-gradient-to-b from-yellow-100 to-yellow-200 rounded-lg px-6 py-8">
                       <Crown className="w-8 h-8 text-yellow-600 mx-auto mb-2" />
@@ -1618,8 +1615,8 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
                 {/* Tercer lugar */}
                 {leaderboard[2] && (
                   <div className="text-center">
-                    <div className="w-20 h-20 bg-orange-200 rounded-full flex items-center justify-center mb-3">
-                      <span className="text-2xl">{leaderboard[2].avatar}</span>
+                    <div className="mb-3">
+                      <PlayerAvatar avatar={leaderboard[2].avatar} size="lg" />
                     </div>
                     <div className="bg-orange-100 rounded-lg px-4 py-6">
                       <div className="text-2xl font-bold text-orange-600 mb-1">3°</div>
@@ -1670,9 +1667,7 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
                       }`}>
                         {p.rank}
                       </div>
-                      <div className="w-12 h-12 bg-gray-200 rounded-full flex items-center justify-center">
-                        <span className="text-lg">{p.avatar}</span>
-                      </div>
+                      <PlayerAvatar avatar={p.avatar} size="md" />
                     </div>
                     
                     <div className="flex-1">

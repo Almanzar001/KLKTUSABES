@@ -141,12 +141,16 @@ export const MAX_PLAYERS_PER_ROOM = 20
 export const DEFAULT_QUESTION_TIME = 30
 export const POINTS_BASE = 1000
 
-// Avatares disponibles
+// Avatares disponibles - IDs que corresponden a los diseños en PlayerAvatar.tsx
 export const AVAILABLE_AVATARS = [
-  '😀', '😃', '😄', '😁', '😊', '😎', '🤓', '🥸',
-  '😇', '🥳', '🤩', '😍', '🤗', '🙂', '😉', '😋',
-  '🐶', '🐱', '🐭', '🐹', '🐰', '🦊', '🐻', '🐼',
-  '🐯', '🦁', '🐸', '🐷', '🐵', '🐔', '🐧', '🦉'
+  'purple-geo', 'blue-wave', 'red-fire', 'green-nature',
+  'orange-sun', 'pink-candy', 'teal-ocean', 'indigo-night',
+  'yellow-star', 'cyan-ice', 'rose-garden', 'lime-fresh',
+  'violet-magic', 'amber-gold', 'emerald-forest', 'sky-dream',
+  'fuchsia-pop', 'slate-modern', 'red-passion', 'blue-electric',
+  'green-mint', 'orange-blaze', 'purple-royal', 'pink-blossom',
+  'teal-tropical', 'yellow-sunshine', 'indigo-deep', 'rose-sunset',
+  'cyan-aqua', 'lime-energy', 'violet-dream', 'amber-warm'
 ]
 
 // Utilidades de validación

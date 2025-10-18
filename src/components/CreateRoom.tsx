@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { roomHelpers, gameHelpers, realtimeHelpers } from '../supabase'
 import { Game, Room, Player, generateRoomCode, AVAILABLE_AVATARS } from '../types'
 import GameSelector from './GameSelector'
+import PlayerAvatar from './PlayerAvatar'
 
 interface CreateRoomProps {
   onBack: () => void
@@ -345,18 +346,18 @@ const CreateRoom: React.FC<CreateRoomProps> = ({ onBack, onJoinRoom }) => {
                   <label className="block text-sm font-semibold text-gray-700 mb-2">
                     Tu Avatar
                   </label>
-                  <div className="grid grid-cols-8 gap-2">
+                  <div className="grid grid-cols-6 gap-3">
                     {AVAILABLE_AVATARS.map((avatar) => (
                       <button
                         key={avatar}
                         onClick={() => setSelectedAvatar(avatar)}
-                        className={`p-3 text-2xl rounded-lg border-2 transition-all ${
+                        className={`p-2 rounded-lg border-2 transition-all hover:scale-105 ${
                           selectedAvatar === avatar
-                            ? 'border-dominican-blue bg-blue-50'
+                            ? 'border-dominican-blue bg-blue-50 ring-2 ring-dominican-blue ring-opacity-50'
                             : 'border-gray-300 hover:border-gray-400'
                         }`}
                       >
-                        {avatar}
+                        <PlayerAvatar avatar={avatar} size="md" />
                       </button>
                     ))}
                   </div>
@@ -428,7 +429,7 @@ const CreateRoom: React.FC<CreateRoomProps> = ({ onBack, onJoinRoom }) => {
                           key={player.id}
                           className="flex items-center gap-3 p-4 bg-gray-50 rounded-lg"
                         >
-                          <span className="text-2xl">{player.avatar}</span>
+                          <PlayerAvatar avatar={player.avatar} size="md" />
                           <div className="flex-1">
                             <p className="font-semibold text-gray-800">
                               {player.name}
@@ -445,7 +446,7 @@ const CreateRoom: React.FC<CreateRoomProps> = ({ onBack, onJoinRoom }) => {
                       {/* Slots vacíos */}
                       {Array.from({ length: Math.max(0, maxPlayers - players.length) }).map((_, index) => (
                         <div key={index} className="flex items-center gap-3 p-4 border-2 border-dashed border-gray-300 rounded-lg">
-                          <div className="w-8 h-8 bg-gray-200 rounded-full"></div>
+                          <div className="w-12 h-12 bg-gray-200 rounded-full"></div>
                           <p className="text-gray-500">Esperando jugador...</p>
                         </div>
                       ))}

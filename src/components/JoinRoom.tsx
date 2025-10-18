@@ -3,6 +3,7 @@ import { ArrowLeft, Users } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { roomHelpers, testConnection } from '../supabase'
 import { Room, Player, AVAILABLE_AVATARS, isValidRoomCode } from '../types'
+import PlayerAvatar from './PlayerAvatar'
 
 interface JoinRoomProps {
   onBack: () => void
@@ -204,18 +205,18 @@ const JoinRoom: React.FC<JoinRoomProps> = ({ onBack, onJoinRoom }) => {
               <label className="block text-sm font-semibold text-gray-700 mb-2">
                 Tu Avatar
               </label>
-              <div className="grid grid-cols-8 gap-2">
+              <div className="grid grid-cols-6 gap-3">
                 {AVAILABLE_AVATARS.map((avatar) => (
                   <button
                     key={avatar}
                     onClick={() => setSelectedAvatar(avatar)}
-                    className={`p-3 text-2xl rounded-lg border-2 transition-all ${
+                    className={`p-2 rounded-lg border-2 transition-all hover:scale-105 ${
                       selectedAvatar === avatar
-                        ? 'border-dominican-blue bg-blue-50'
+                        ? 'border-dominican-blue bg-blue-50 ring-2 ring-dominican-blue ring-opacity-50'
                         : 'border-gray-300 hover:border-gray-400'
                     }`}
                   >
-                    {avatar}
+                    <PlayerAvatar avatar={avatar} size="md" />
                   </button>
                 ))}
               </div>
@@ -226,7 +227,7 @@ const JoinRoom: React.FC<JoinRoomProps> = ({ onBack, onJoinRoom }) => {
           <div className="mt-8 p-4 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
             <p className="text-sm font-semibold text-gray-700 mb-2">Vista previa:</p>
             <div className="flex items-center gap-3">
-              <span className="text-2xl">{selectedAvatar}</span>
+              <PlayerAvatar avatar={selectedAvatar} size="lg" />
               <div>
                 <p className="font-semibold text-gray-800">
                   {playerName || 'Tu nombre'}
