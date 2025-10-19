@@ -760,7 +760,7 @@ const SinglePlayerGame: React.FC<SinglePlayerGameProps> = ({
         sessionTitle={qrSessionTitle || 'Sesión QR'}
         currentPlayerName={playerName}
         onBack={handleBackFromLeaderboard}
-        onPlayAgain={handlePlayAgain}
+        // No pasamos onPlayAgain para que no aparezca el botón en modo QR
       />
     )
   }
@@ -878,13 +878,15 @@ const SinglePlayerGame: React.FC<SinglePlayerGameProps> = ({
 
             {/* Acciones */}
             <div className="flex flex-wrap gap-4">
-              <button
-                onClick={handlePlayAgain}
-                className="btn-dominican-primary flex-1 min-w-0"
-              >
-                <RotateCcw className="w-5 h-5 mr-2" />
-                Jugar de Nuevo
-              </button>
+              {!isQRSession && (
+                <button
+                  onClick={handlePlayAgain}
+                  className="btn-dominican-primary flex-1 min-w-0"
+                >
+                  <RotateCcw className="w-5 h-5 mr-2" />
+                  Jugar de Nuevo
+                </button>
+              )}
               
               {isQRSession && qrSessionId && (
                 <button
