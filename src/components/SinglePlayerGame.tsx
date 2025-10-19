@@ -49,6 +49,7 @@ const SinglePlayerGame: React.FC<SinglePlayerGameProps> = ({
   // Estados para sesiones QR
   const [playerName] = useState(initialPlayerName || '')
   const [, setSavingResults] = useState(false)
+  const [qrResultsSaved, setQrResultsSaved] = useState(false) // Nueva bandera para evitar guardados múltiples
   
   // Estados del juego
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null)
@@ -90,6 +91,12 @@ const SinglePlayerGame: React.FC<SinglePlayerGameProps> = ({
       return
     }
 
+    // Si ya se guardaron los resultados, no volver a guardar
+    if (qrResultsSaved) {
+      console.log('QR results already saved, skipping...')
+      return
+    }
+
     // Normalizar nombre
     const normalizedName = name.trim()
     if (!normalizedName || normalizedName.length < 2) {
@@ -99,6 +106,7 @@ const SinglePlayerGame: React.FC<SinglePlayerGameProps> = ({
     }
     
     setSavingResults(true)
+    setQrResultsSaved(true) // Marcar como guardado antes de intentar
     try {
       // Verificar que la sesión QR esté activa
       const { data: sessionData, error: sessionError } = await supabase
@@ -178,7 +186,7 @@ const SinglePlayerGame: React.FC<SinglePlayerGameProps> = ({
     } finally {
       setSavingResults(false)
     }
-  }, [isQRSession, qrSessionId, selectedGame, answers, calculateResults])
+  }, [isQRSession, qrSessionId, selectedGame, answers, calculateResults, qrResultsSaved])
 
   // Manejar guardado automático para sesión QR
   const handleAutoSaveQRResults = useCallback(async () => {
@@ -198,10 +206,10 @@ const SinglePlayerGame: React.FC<SinglePlayerGameProps> = ({
 
   // Auto-guardar resultados cuando el juego termine en sesiones QR
   useEffect(() => {
-    if (gameState === 'results' && isQRSession && qrSessionId && playerName.trim()) {
+    if (gameState === 'results' && isQRSession && qrSessionId && playerName.trim() && !qrResultsSaved) {
       handleAutoSaveQRResults()
     }
-  }, [gameState, isQRSession, qrSessionId, playerName, handleAutoSaveQRResults])
+  }, [gameState, qrResultsSaved]) // Simplificado: solo depende de gameState y la bandera
 
   // Timer del juego con efectos visuales y sonoros mejorados
   useEffect(() => {
@@ -303,6 +311,7 @@ const SinglePlayerGame: React.FC<SinglePlayerGameProps> = ({
     setShowAnswer(false)
     setAnswers([])
     setGameStartTime(Date.now())
+    setQrResultsSaved(false) // Resetear bandera al iniciar un nuevo juego
     
     // Si no hay preguntas mezcladas y tenemos un juego seleccionado, crear las preguntas mezcladas
     if (selectedGame?.questions && shuffledQuestions.length === 0) {
@@ -407,6 +416,9 @@ const SinglePlayerGame: React.FC<SinglePlayerGameProps> = ({
   }
 
   const handlePlayAgain = () => {
+    // Resetear bandera de guardado para permitir guardar en el próximo juego
+    setQrResultsSaved(false)
+    
     // Re-mezclar las preguntas y opciones para el nuevo juego
     if (selectedGame?.questions) {
       // Primero mezclar el orden de las preguntas
