@@ -18,7 +18,15 @@ type GameState = 'waiting' | 'question' | 'answer' | 'leaderboard'
 
 const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, player, onBack }) => {
   // const { user } = useAuth() // Currently unused
-  const { playCorrect, playIncorrect, playTick, playTimeUp, playGameStart } = useGameSounds()
+  const { 
+    playCorrect, 
+    playIncorrect, 
+    playTick, 
+    playTimeUp, 
+    playGameStart,
+    initializeAudio,
+    isAudioEnabled 
+  } = useGameSounds()
 
   // Estados principales
   const [room, setRoom] = useState<Room>(initialRoom)
@@ -69,6 +77,34 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
       loadGameForParticipant()
     }
   }, [])
+
+  // Inicializar audio con primera interacción del usuario
+  useEffect(() => {
+    const handleFirstInteraction = () => {
+      if (!isAudioEnabled) {
+        initializeAudio().then(success => {
+          if (success) {
+            console.log('Audio inicializado correctamente en MultiplayerRoom')
+          }
+        })
+      }
+      // Remover listeners después de la primera interacción
+      document.removeEventListener('click', handleFirstInteraction)
+      document.removeEventListener('keydown', handleFirstInteraction)
+      document.removeEventListener('touchstart', handleFirstInteraction)
+    }
+    
+    // Agregar listeners para diferentes tipos de interacción
+    document.addEventListener('click', handleFirstInteraction)
+    document.addEventListener('keydown', handleFirstInteraction)  
+    document.addEventListener('touchstart', handleFirstInteraction)
+    
+    return () => {
+      document.removeEventListener('click', handleFirstInteraction)
+      document.removeEventListener('keydown', handleFirstInteraction)
+      document.removeEventListener('touchstart', handleFirstInteraction)
+    }
+  }, [initializeAudio, isAudioEnabled])
 
   // Suscribirse a cambios en jugadores
   useEffect(() => {
@@ -594,11 +630,13 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
         
         const newTime = prev - 1
         
-        // Sonidos del temporizador solo si no ha respondido
+        // Sonidos del temporizador solo si no ha respondido - evitar spam
         if (selectedAnswer === null) {
-          if (newTime <= 10 && newTime > 5) {
+          if (newTime === 10) {
+            // Un solo tick a los 10 segundos
             playTick()
           } else if (newTime <= 5 && newTime > 0) {
+            // Tick en los últimos 5 segundos
             playTick()
           }
         }
@@ -1364,7 +1402,8 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
               {currentQuestion.options.map((option, index) => {
                 // Obtener la respuesta del jugador actual (puede estar en selectedAnswer o en playerAnswers)
                 const playerAnswer = selectedAnswer !== null ? selectedAnswer : playerAnswers[player.id]
-                const isPlayerChoice = playerAnswer === index
+                // Solo considerar como selección del jugador si realmente hay una respuesta
+                const isPlayerChoice = (playerAnswer !== null && playerAnswer !== undefined) && playerAnswer === index
                 const isCorrect = index === currentQuestion.correct_answer
                 
                 return (

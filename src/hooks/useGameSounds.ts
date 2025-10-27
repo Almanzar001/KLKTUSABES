@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react'
+import { useCallback, useRef, useState } from 'react'
 
 // Tipos de sonidos disponibles
 export type SoundType = 'correct' | 'incorrect' | 'tick' | 'timeup' | 'game-start' | 'game-end'
@@ -14,6 +14,8 @@ interface UseGameSoundsReturn {
   setVolume: (volume: number) => void
   toggleMute: () => void
   isMuted: boolean
+  initializeAudio: () => Promise<boolean>
+  isAudioEnabled: boolean
 }
 
 // Configuración de frecuencias para cada sonido (usando Web Audio API)
@@ -59,28 +61,104 @@ const SOUND_CONFIGS = {
 export const useGameSounds = (): UseGameSoundsReturn => {
   const audioContextRef = useRef<AudioContext | null>(null)
   const volumeRef = useRef<number>(0.5)
-  const isMutedRef = useRef<boolean>(false)
+  const [isMuted, setIsMuted] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('gameSound_muted')
+      return saved ? JSON.parse(saved) : false
+    } catch {
+      return false
+    }
+  })
+  const activeOscillators = useRef<Set<OscillatorNode>>(new Set())
+  const lastSoundTime = useRef<{ [key: string]: number }>({})
+  const [isAudioEnabled, setIsAudioEnabled] = useState(false)
 
-  // Inicializar AudioContext
+  // Inicializar AudioContext de manera segura
   const getAudioContext = useCallback((): AudioContext | null => {
     if (!audioContextRef.current) {
       try {
-        // Crear AudioContext solo si el navegador lo soporta
-        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext
-        if (AudioContextClass) {
-          audioContextRef.current = new AudioContextClass()
+        // Verificar soporte completo de Web Audio API
+        if (!window.AudioContext && !(window as any).webkitAudioContext) {
+          console.warn('Web Audio API no soportada en este navegador')
+          return null
         }
+        
+        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext
+        audioContextRef.current = new AudioContextClass()
+        
+        // Intentar reanudar inmediatamente si está suspendido
+        if (audioContextRef.current.state === 'suspended') {
+          audioContextRef.current.resume().catch(err => {
+            console.warn('No se pudo reanudar AudioContext automáticamente:', err)
+          })
+        }
+        
+        setIsAudioEnabled(true)
       } catch (error) {
-        console.warn('Web Audio API no está disponible:', error)
+        console.warn('Error creando AudioContext:', error)
         return null
       }
     }
     return audioContextRef.current
   }, [])
 
-  // Función para generar y reproducir un sonido
-  const playSound = useCallback((soundType: SoundType) => {
-    if (isMutedRef.current) return
+  // Función para inicializar audio manualmente (requerido por navegadores)
+  const initializeAudio = useCallback(async (): Promise<boolean> => {
+    const audioContext = getAudioContext()
+    if (!audioContext) return false
+    
+    try {
+      if (audioContext.state === 'suspended') {
+        await audioContext.resume()
+      }
+      
+      // Test básico de funcionalidad con sonido muy breve
+      const testOscillator = audioContext.createOscillator()
+      const testGain = audioContext.createGain()
+      testGain.gain.setValueAtTime(0.001, audioContext.currentTime) // Volumen muy bajo para test
+      testOscillator.connect(testGain)
+      testGain.connect(audioContext.destination)
+      testOscillator.frequency.setValueAtTime(440, audioContext.currentTime)
+      testOscillator.start()
+      testOscillator.stop(audioContext.currentTime + 0.001) // 1ms de duración
+      
+      setIsAudioEnabled(true)
+      return true
+    } catch (error) {
+      console.warn('Error inicializando audio:', error)
+      setIsAudioEnabled(false)
+      return false
+    }
+  }, [getAudioContext])
+
+  // Función para limpiar oscillators
+  const cleanupOscillator = useCallback((oscillator: OscillatorNode, gainNode: GainNode) => {
+    activeOscillators.current.delete(oscillator)
+    try {
+      oscillator.disconnect()
+      gainNode.disconnect()
+    } catch (e) {
+      // Ya estaba desconectado, ignorar
+    }
+  }, [])
+
+  // Función para generar y reproducir un sonido con debouncing
+  const playSound = useCallback(async (soundType: SoundType, minInterval = 200) => {
+    if (isMuted) return
+    
+    // Debouncing para evitar spam de sonidos
+    const now = Date.now()
+    const lastTime = lastSoundTime.current[soundType] || 0
+    if (now - lastTime < minInterval) {
+      return
+    }
+    lastSoundTime.current[soundType] = now
+    
+    // Límite de oscillators concurrentes para evitar sobrecarga
+    if (activeOscillators.current.size >= 3) {
+      console.warn('Demasiados sonidos concurrentes, omitiendo:', soundType)
+      return
+    }
 
     const audioContext = getAudioContext()
     if (!audioContext) return
@@ -88,7 +166,7 @@ export const useGameSounds = (): UseGameSoundsReturn => {
     try {
       // Reanudar el contexto si está suspendido (requerido por algunos navegadores)
       if (audioContext.state === 'suspended') {
-        audioContext.resume()
+        await audioContext.resume()
       }
 
       const config = SOUND_CONFIGS[soundType]
@@ -96,6 +174,9 @@ export const useGameSounds = (): UseGameSoundsReturn => {
       // Crear oscilador
       const oscillator = audioContext.createOscillator()
       const gainNode = audioContext.createGain()
+      
+      // Agregar a conjunto activo
+      activeOscillators.current.add(oscillator)
       
       // Configurar oscilador
       oscillator.type = config.type
@@ -116,17 +197,22 @@ export const useGameSounds = (): UseGameSoundsReturn => {
       
       // Limpiar después de reproducir
       oscillator.onended = () => {
-        oscillator.disconnect()
-        gainNode.disconnect()
+        cleanupOscillator(oscillator, gainNode)
       }
+      
+      // Limpiar automáticamente después del tiempo configurado (fallback)
+      setTimeout(() => {
+        cleanupOscillator(oscillator, gainNode)
+      }, config.duration + 100)
+      
     } catch (error) {
       console.warn(`Error reproduciendo sonido ${soundType}:`, error)
     }
-  }, [getAudioContext])
+  }, [getAudioContext, isMuted, cleanupOscillator])
 
   // Función especial para sonido de respuesta correcta con melodía
   const playCorrect = useCallback(() => {
-    if (isMutedRef.current) return
+    if (isMuted) return
 
     const audioContext = getAudioContext()
     if (!audioContext) return
@@ -172,7 +258,7 @@ export const useGameSounds = (): UseGameSoundsReturn => {
 
   // Función especial para sonido de respuesta incorrecta
   const playIncorrect = useCallback(() => {
-    if (isMutedRef.current) return
+    if (isMuted) return
 
     const audioContext = getAudioContext()
     if (!audioContext) return
@@ -213,21 +299,28 @@ export const useGameSounds = (): UseGameSoundsReturn => {
     }
   }, [getAudioContext])
 
-  // Otros sonidos usando la función genérica
-  const playTick = useCallback(() => playSound('tick'), [playSound])
-  const playTimeUp = useCallback(() => playSound('timeup'), [playSound])
-  const playGameStart = useCallback(() => playSound('game-start'), [playSound])
-  const playGameEnd = useCallback(() => playSound('game-end'), [playSound])
+  // Otros sonidos usando la función genérica con debouncing apropiado
+  const playTick = useCallback(() => { playSound('tick', 800) }, [playSound]) // Debounce más largo para tick
+  const playTimeUp = useCallback(() => { playSound('timeup', 1000) }, [playSound])
+  const playGameStart = useCallback(() => { playSound('game-start', 1000) }, [playSound])
+  const playGameEnd = useCallback(() => { playSound('game-end', 1000) }, [playSound])
 
   // Control de volumen
   const setVolume = useCallback((volume: number) => {
     volumeRef.current = Math.max(0, Math.min(1, volume))
   }, [])
 
-  // Toggle mute
+  // Toggle mute con persistencia
   const toggleMute = useCallback(() => {
-    isMutedRef.current = !isMutedRef.current
-    return isMutedRef.current
+    setIsMuted(prev => {
+      const newValue = !prev
+      try {
+        localStorage.setItem('gameSound_muted', JSON.stringify(newValue))
+      } catch (e) {
+        console.warn('No se pudo guardar preferencia de audio:', e)
+      }
+      return newValue
+    })
   }, [])
 
   return {
@@ -239,7 +332,9 @@ export const useGameSounds = (): UseGameSoundsReturn => {
     playGameEnd,
     setVolume,
     toggleMute,
-    isMuted: isMutedRef.current
+    isMuted,
+    initializeAudio,
+    isAudioEnabled
   }
 }
 

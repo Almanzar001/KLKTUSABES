@@ -37,7 +37,16 @@ const SinglePlayerGame: React.FC<SinglePlayerGameProps> = ({
   playerName: initialPlayerName
 }) => {
   // Hook de sonidos
-  const { playCorrect, playIncorrect, playTick, playTimeUp, playGameStart, playGameEnd } = useGameSounds()
+  const { 
+    playCorrect, 
+    playIncorrect, 
+    playTick, 
+    playTimeUp, 
+    playGameStart, 
+    playGameEnd,
+    initializeAudio,
+    isAudioEnabled 
+  } = useGameSounds()
 
   // Estados principales
   const [games, setGames] = useState<Game[]>([])
@@ -211,6 +220,34 @@ const SinglePlayerGame: React.FC<SinglePlayerGameProps> = ({
     }
   }, [gameState, qrResultsSaved]) // Simplificado: solo depende de gameState y la bandera
 
+  // Inicializar audio con primera interacción del usuario
+  useEffect(() => {
+    const handleFirstInteraction = () => {
+      if (!isAudioEnabled) {
+        initializeAudio().then(success => {
+          if (success) {
+            console.log('Audio inicializado correctamente')
+          }
+        })
+      }
+      // Remover listeners después de la primera interacción
+      document.removeEventListener('click', handleFirstInteraction)
+      document.removeEventListener('keydown', handleFirstInteraction)
+      document.removeEventListener('touchstart', handleFirstInteraction)
+    }
+    
+    // Agregar listeners para diferentes tipos de interacción
+    document.addEventListener('click', handleFirstInteraction)
+    document.addEventListener('keydown', handleFirstInteraction)  
+    document.addEventListener('touchstart', handleFirstInteraction)
+    
+    return () => {
+      document.removeEventListener('click', handleFirstInteraction)
+      document.removeEventListener('keydown', handleFirstInteraction)
+      document.removeEventListener('touchstart', handleFirstInteraction)
+    }
+  }, [initializeAudio, isAudioEnabled])
+
   // Timer del juego con efectos visuales y sonoros mejorados
   useEffect(() => {
     if (gameState !== 'playing' || showAnswer) return
@@ -224,12 +261,12 @@ const SinglePlayerGame: React.FC<SinglePlayerGameProps> = ({
         
         const newTime = prev - 1
         
-        // Sonidos del temporizador
-        if (newTime <= 10 && newTime > 5) {
-          // Tick suave para los últimos 10 segundos
+        // Sonidos del temporizador - solo en momentos específicos para evitar spam
+        if (newTime === 10) {
+          // Un solo tick a los 10 segundos
           playTick()
         } else if (newTime <= 5 && newTime > 0) {
-          // Tick más urgente para los últimos 5 segundos
+          // Tick en los últimos 5 segundos
           playTick()
           // Añadir vibración en dispositivos móviles si está disponible
           if ('vibrate' in navigator && newTime <= 3) {

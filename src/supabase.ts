@@ -650,8 +650,8 @@ export const statsHelpers = {
 
       // Obtener estadísticas en paralelo
       const [gamesResponse, creatorsResponse, sessionsResponse] = await Promise.all([
-        // Total de juegos públicos
-        fetch(`${supabaseUrl}/rest/v1/games?select=id&is_public=eq.true`, {
+        // Total de juegos
+        fetch(`${supabaseUrl}/rest/v1/games?select=id`, {
           headers: {
             'apikey': supabaseAnonKey,
             'Authorization': `Bearer ${authToken || supabaseAnonKey}`,
