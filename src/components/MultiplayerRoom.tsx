@@ -1402,8 +1402,25 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
               {currentQuestion.options.map((option, index) => {
                 // Obtener la respuesta del jugador actual (puede estar en selectedAnswer o en playerAnswers)
                 const playerAnswer = selectedAnswer !== null ? selectedAnswer : playerAnswers[player.id]
-                // Solo considerar como selección del jugador si realmente hay una respuesta
-                const isPlayerChoice = (playerAnswer !== null && playerAnswer !== undefined) && playerAnswer === index
+                // Solo considerar como selección del jugador si realmente hay una respuesta válida
+                // Importante: Verificar que playerAnswers[player.id] existe antes de usar su valor
+                const hasLocalAnswer = selectedAnswer !== null
+                const hasRemoteAnswer = player.id in playerAnswers && playerAnswers[player.id] !== null && playerAnswers[player.id] !== undefined
+                const isPlayerChoice = (hasLocalAnswer || hasRemoteAnswer) && playerAnswer === index
+                
+                // Debug logging para identificar el problema en móvil
+                if (index === 0 && isPlayerChoice && !hasLocalAnswer && !showAnswer) {
+                  console.warn('🐛 DEBUG: Respuesta sombreada detectada en índice 0', {
+                    selectedAnswer,
+                    playerAnswersForThisPlayer: playerAnswers[player.id],
+                    playerAnswers,
+                    playerId: player.id,
+                    hasLocalAnswer,
+                    hasRemoteAnswer,
+                    playerAnswer,
+                    isPlayerChoice
+                  })
+                }
                 const isCorrect = index === currentQuestion.correct_answer
                 
                 return (
@@ -1437,7 +1454,10 @@ const MultiplayerRoom: React.FC<MultiplayerRoomProps> = ({ room: initialRoom, pl
                     // Obtener la respuesta del jugador actual de forma más robusta
                     const playerAnswer = selectedAnswer !== null ? selectedAnswer : playerAnswers[player.id]
                     const isCorrect = playerAnswer === currentQuestion.correct_answer
-                    const hasAnswered = playerAnswer !== null && playerAnswer !== undefined
+                    // Verificar que realmente existe una respuesta válida
+                    const hasLocalAnswer = selectedAnswer !== null
+                    const hasRemoteAnswer = player.id in playerAnswers && playerAnswers[player.id] !== null && playerAnswers[player.id] !== undefined
+                    const hasAnswered = hasLocalAnswer || hasRemoteAnswer
                     
                     return (
                       <div className={`text-2xl font-bold mb-4 ${
