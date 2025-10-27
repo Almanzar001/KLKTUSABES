@@ -342,7 +342,15 @@ export const useGameSounds = (): UseGameSoundsReturn => {
 export const useGameSoundsWithFiles = (): UseGameSoundsReturn => {
   const audioRefs = useRef<{ [key in SoundType]?: HTMLAudioElement }>({})
   const volumeRef = useRef<number>(0.5)
-  const isMutedRef = useRef<boolean>(false)
+  const [isMuted, setIsMuted] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('gameSound_muted')
+      return saved ? JSON.parse(saved) : false
+    } catch {
+      return false
+    }
+  })
+  const [isAudioEnabled, setIsAudioEnabled] = useState(false)
 
   // URLs de archivos de sonido (coloca los archivos en public/sounds/)
   const soundFiles: { [key in SoundType]: string } = {
@@ -364,9 +372,33 @@ export const useGameSoundsWithFiles = (): UseGameSoundsReturn => {
     }
   }, [soundFiles])
 
+  // Función para inicializar audio con archivos
+  const initializeAudio = useCallback(async (): Promise<boolean> => {
+    try {
+      // Test con un archivo de audio silencioso
+      const testAudio = new Audio()
+      testAudio.volume = 0.001
+      testAudio.muted = true
+      
+      // Intentar reproducir un sonido mudo para activar contexto de audio
+      const playPromise = testAudio.play()
+      if (playPromise) {
+        await playPromise
+        testAudio.pause()
+      }
+      
+      setIsAudioEnabled(true)
+      return true
+    } catch (error) {
+      console.warn('Error inicializando audio con archivos:', error)
+      setIsAudioEnabled(false)
+      return false
+    }
+  }, [])
+
   // Función para reproducir sonido desde archivo
   const playFileSound = useCallback((soundType: SoundType) => {
-    if (isMutedRef.current) return
+    if (isMuted) return
 
     try {
       preloadSound(soundType)
@@ -403,8 +435,15 @@ export const useGameSoundsWithFiles = (): UseGameSoundsReturn => {
   }, [])
 
   const toggleMute = useCallback(() => {
-    isMutedRef.current = !isMutedRef.current
-    return isMutedRef.current
+    setIsMuted(prev => {
+      const newValue = !prev
+      try {
+        localStorage.setItem('gameSound_muted', JSON.stringify(newValue))
+      } catch (e) {
+        console.warn('No se pudo guardar preferencia de audio:', e)
+      }
+      return newValue
+    })
   }, [])
 
   return {
@@ -416,7 +455,9 @@ export const useGameSoundsWithFiles = (): UseGameSoundsReturn => {
     playGameEnd,
     setVolume,
     toggleMute,
-    isMuted: isMutedRef.current
+    isMuted,
+    initializeAudio,
+    isAudioEnabled
   }
 }
 
